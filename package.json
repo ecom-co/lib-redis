@@ -1,0 +1,46 @@
+{
+  "name": "@ecom-co/redis",
+  "version": "0.1.0",
+  "description": "NestJS Redis module built on ioredis with multi-client support and optional health indicator",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
+    "clean": "rm -rf dist",
+    "lint": "eslint \"src/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" --fix",
+    "prepublishOnly": "npm run clean && npm run build",
+    "release:patch": "npm version patch && npm publish",
+    "release:minor": "npm version minor && npm publish",
+    "release:major": "npm version major && npm publish"
+  },
+  "peerDependencies": {
+    "@nestjs/common": ">=10.0.0",
+    "@nestjs/core": ">=10.0.0",
+    "ioredis": ">=5.0.0"
+  },
+  "optionalDependencies": {
+    "@nestjs/terminus": "^10.2.0"
+  },
+  "devDependencies": {
+    "@ecom-co/eslint": "^2.0.2",
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/core": "^10.3.0",
+    "@types/node": "^24.2.1",
+    "eslint": "^9.33.0",
+    "ioredis": "^5.3.2",
+    "typescript": "^5.7.3"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/e-commerce-platform-co/lib-redis.git"
+  }
+}
+
+
