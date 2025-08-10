@@ -12,7 +12,7 @@ Peer deps: `@nestjs/common`, `@nestjs/core`.
 
 ## Usage
 
-### Register
+### Register (sync)
 
 ```ts
 import { Module } from '@nestjs/common';
@@ -37,12 +37,16 @@ or async:
 
 ```ts
 RedisModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
   useFactory: (config: ConfigService) => ({
     clients: [
-      { type: 'single', name: 'default', host: config.get('REDIS_HOST'), port: config.get('REDIS_PORT') },
+      { type: 'single', name: 'default', connectionString: config.get('REDIS_URL') },
+      { type: 'single', name: 'forward', connectionString: 'redis://user:pass@host:6379' },
     ],
   }),
-  inject: [ConfigService],
+  // Optional in async mode: predeclare names to enable direct DI by name
+  predeclare: ['forward'],
 });
 ```
 
@@ -62,6 +66,27 @@ export class CacheService {
 }
 ```
 
+Inject a named client (sync or async with predeclared name):
+
+```ts
+@Injectable()
+export class ForwardService {
+  constructor(@InjectRedis('forward') private readonly redis: RedisClient) {}
+}
+```
+
+Async without predeclare: use `RedisService` and resolve by name at runtime:
+
+```ts
+@Injectable()
+export class ForwardService {
+  constructor(private readonly redisService: RedisService) {}
+  get client() {
+    return this.redisService.get('forward');
+  }
+}
+```
+
 ### Health (optional)
 
 ```ts
@@ -72,6 +97,8 @@ const res = await checkRedisHealthy(redisClient);
 ## Notes
 - Dependencies are peers; install them in the app.
 - Exposes root-only API. Avoid deep imports.
+- Tokens are uppercase: `REDIS_CLIENT` (default) and `REDIS_CLIENT_<NAME>` for named clients.
+- Names in DI are case-insensitive; internally normalized.
 
 ## Connection strings
 
