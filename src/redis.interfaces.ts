@@ -34,3 +34,12 @@ export interface RedisModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'>
      */
     predeclare?: string[];
 }
+
+// Utility types to derive client name unions at compile time
+export type RedisClientNamesFromOptions<T extends { clients: ReadonlyArray<{ name?: string }> }> =
+    | Lowercase<Extract<T['clients'][number]['name'], string>>
+    | 'default';
+
+export type RedisClientNamesFromPredeclare<TNames extends ReadonlyArray<string>> =
+    | Lowercase<TNames[number]>
+    | 'default';

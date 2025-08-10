@@ -1,6 +1,12 @@
 import { DynamicModule, Global, Module, Provider } from '@nestjs/common';
 
-import { getRedisClientToken, REDIS_DEFAULT_CLIENT_NAME, REDIS_MODULE_OPTIONS } from './redis.constants';
+import {
+    getRedisClientToken,
+    getRedisFacadeToken,
+    REDIS_DEFAULT_CLIENT_NAME,
+    REDIS_MODULE_OPTIONS,
+} from './redis.constants';
+import { RedisFacade } from './redis.facade';
 import type { RedisClient, RedisClientOptions, RedisModuleAsyncOptions, RedisModuleOptions } from './redis.interfaces';
 import { RedisService } from './redis.service';
 
@@ -14,6 +20,18 @@ const createClientProviders = (options: RedisModuleOptions): Provider[] =>
             provide: token,
             useFactory: (service: RedisService): RedisClient => service.get(name),
             inject: [RedisService],
+        } satisfies Provider;
+    });
+
+const createFacadeProviders = (options: RedisModuleOptions): Provider[] =>
+    options.clients.map((clientOptions: RedisClientOptions) => {
+        const name = normalizeName(clientOptions.name);
+        const clientToken = getRedisClientToken(name);
+        const facadeToken = getRedisFacadeToken(name);
+        return {
+            provide: facadeToken,
+            useFactory: (client: RedisClient): RedisFacade => new RedisFacade(client, name),
+            inject: [clientToken],
         } satisfies Provider;
     });
 
@@ -32,6 +50,7 @@ export class RedisModule {
             inject: [REDIS_MODULE_OPTIONS],
         };
         const clientProviders = createClientProviders(options);
+        const facadeProviders = createFacadeProviders(options);
         const defaultProvider: Provider = {
             provide: getRedisClientToken(REDIS_DEFAULT_CLIENT_NAME),
             useFactory: (service: RedisService) => service.get(REDIS_DEFAULT_CLIENT_NAME),
@@ -39,11 +58,13 @@ export class RedisModule {
         };
         return {
             module: RedisModule,
-            providers: [optionProvider, serviceProvider, defaultProvider, ...clientProviders],
+            providers: [optionProvider, serviceProvider, defaultProvider, ...clientProviders, ...facadeProviders],
             exports: [
                 RedisService,
                 getRedisClientToken(REDIS_DEFAULT_CLIENT_NAME),
                 ...options.clients.map((c) => getRedisClientToken(normalizeName(c.name))),
+                getRedisFacadeToken(REDIS_DEFAULT_CLIENT_NAME),
+                ...options.clients.map((c) => getRedisFacadeToken(normalizeName(c.name))),
             ],
         };
     }
@@ -83,13 +104,39 @@ export class RedisModule {
             ...predeclaredProviders,
         ];
 
+        const facadeProxyProviders: Provider[] = [
+            {
+                provide: getRedisFacadeToken(REDIS_DEFAULT_CLIENT_NAME),
+                useFactory: (service: RedisService): RedisFacade =>
+                    new RedisFacade(service.get(REDIS_DEFAULT_CLIENT_NAME), REDIS_DEFAULT_CLIENT_NAME),
+                inject: [RedisService],
+            },
+            ...(options.predeclare ?? []).map((rawName): Provider => {
+                const name = normalizeName(rawName);
+                return {
+                    provide: getRedisFacadeToken(name),
+                    useFactory: (service: RedisService): RedisFacade => new RedisFacade(service.get(name), name),
+                    inject: [RedisService],
+                } satisfies Provider;
+            }),
+        ];
+
         return {
             module: RedisModule,
             imports: options.imports || [],
-            providers: [asyncOptionsProvider, serviceProvider, ...proxyProviders],
+            providers: [asyncOptionsProvider, serviceProvider, ...proxyProviders, ...facadeProxyProviders],
             exports: (() => {
                 const predeclaredTokens = (options.predeclare ?? []).map((n) => getRedisClientToken(normalizeName(n)));
-                return [RedisService, getRedisClientToken(REDIS_DEFAULT_CLIENT_NAME), ...predeclaredTokens];
+                const predeclaredFacadeTokens = (options.predeclare ?? []).map((n) =>
+                    getRedisFacadeToken(normalizeName(n)),
+                );
+                return [
+                    RedisService,
+                    getRedisClientToken(REDIS_DEFAULT_CLIENT_NAME),
+                    ...predeclaredTokens,
+                    getRedisFacadeToken(REDIS_DEFAULT_CLIENT_NAME),
+                    ...predeclaredFacadeTokens,
+                ];
             })(),
         };
     }

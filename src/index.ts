@@ -5,3 +5,4 @@ export * from './redis.module';
 export * from './redis.utils';
 export * from './terminus/redis.health';
 export * from './redis.service';
+export * from './redis.facade';

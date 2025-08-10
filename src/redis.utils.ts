@@ -17,3 +17,18 @@ export const createRedisClient = (options: RedisClientOptions): RedisClient => {
     }
     return new IORedis(single);
 };
+
+/**
+ * Create a typed map of client names to avoid `as` assertions when injecting.
+ * Example:
+ *   const NAMES = ['FORWARD', 'CACHE'] as const;
+ *   const RedisNames = defineRedisNames(NAMES);
+ *   // InjectRedis(RedisNames.FORWARD)
+ */
+export const defineRedisNames = <const T extends readonly string[]>(names: T): { [K in T[number]]: K } => {
+    const map = Object.create(null) as { [K in T[number]]: K };
+    for (const n of names) {
+        (map as Record<string, string>)[n] = n as unknown as typeof n;
+    }
+    return map;
+};
