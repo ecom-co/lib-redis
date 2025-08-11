@@ -18,7 +18,22 @@ export type ClusterClientOptions = {
     nodes: Array<ClusterNode | string>;
 } & ClusterOptions;
 
-export type RedisClientOptions = SingleClientOptions | ClusterClientOptions;
+export type SentinelAddress = { host: string; port: number };
+
+export type SentinelClientOptions = {
+    type: 'sentinel';
+    /** Logical DI client name (case-insensitive) */
+    name?: string;
+    /** Sentinel nodes */
+    sentinels: SentinelAddress[];
+    /** Master name registered in Sentinel (ioredis option `name`) */
+    sentinelName: string;
+    /** Optional credentials for sentinel nodes */
+    sentinelUsername?: string;
+    sentinelPassword?: string;
+} & Omit<RedisOptions, 'sentinels' | 'name' | 'sentinelUsername' | 'sentinelPassword'>;
+
+export type RedisClientOptions = SingleClientOptions | ClusterClientOptions | SentinelClientOptions;
 
 export interface RedisModuleOptions {
     clients: RedisClientOptions[];

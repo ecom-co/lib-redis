@@ -1,4 +1,4 @@
-import IORedis, { Cluster } from 'ioredis';
+import IORedis, { Cluster, type RedisOptions } from 'ioredis';
 
 import type { RedisClientOptions, RedisClient, ClusterClientOptions } from './redis.interfaces';
 
@@ -9,6 +9,18 @@ export const createRedisClient = (options: RedisClientOptions): RedisClient => {
         const { nodes, ...clusterOptions } = options;
         const normalizedNodes = toClusterNodes(nodes);
         return new Cluster(normalizedNodes, clusterOptions);
+    }
+
+    if (options.type === 'sentinel') {
+        const { sentinels, sentinelName, sentinelUsername, sentinelPassword, ...rest } = options;
+        const config: RedisOptions = {
+            ...rest,
+            sentinels,
+            name: sentinelName,
+            sentinelUsername,
+            sentinelPassword,
+        };
+        return new IORedis(config);
     }
 
     const single = options;

@@ -26,6 +26,21 @@ import { RedisModule } from '@ecom-co/redis';
         { type: 'single', name: 'cache', host: 'localhost', port: 6380 },
         // Cluster example
         // { type: 'cluster', name: 'clustered', nodes: [{ host: 'r1', port: 6379 }, { host: 'r2', port: 6379 }] },
+        // Sentinel example (master name = mymaster)
+        // {
+        //   type: 'sentinel',
+        //   name: 'ha',
+        //   sentinels: [
+        //     { host: '127.0.0.1', port: 26379 },
+        //     { host: '127.0.0.1', port: 26380 },
+        //   ],
+        //   sentinelName: 'mymaster',
+        //   // optional
+        //   sentinelUsername: 'user',
+        //   sentinelPassword: 'pass',
+        //   password: 'redis-pass',
+        //   db: 0,
+        // },
       ],
     }),
   ],
