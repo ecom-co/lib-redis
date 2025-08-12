@@ -1,11 +1,12 @@
 import { DynamicModule, Global, Module, Provider } from '@nestjs/common';
 
-import chain from 'lodash/chain';
-import compact from 'lodash/compact';
+// Thêm filter, map và xóa các import không cần thiết
+// Removed lodash/filter in favor of native Array#filter with type guards to avoid overload ambiguity
 import get from 'lodash/get';
 import isArray from 'lodash/isArray';
 import isObject from 'lodash/isObject';
 import isString from 'lodash/isString';
+// Removed lodash/map in favor of native Array#map
 import toLower from 'lodash/toLower';
 import trim from 'lodash/trim';
 
@@ -24,24 +25,26 @@ const normalizeName = (name?: string): string => {
     return toLower(trimmedName);
 };
 
+const isRedisClientOptions = (value: unknown): value is RedisClientOptions => isObject(value);
+const isStringName = (value: unknown): value is string => isString(value);
+
 const createClientProviders = (options: RedisModuleOptions): Provider[] => {
     if (!isObject(options) || !isArray(options.clients)) {
         return [];
     }
 
-    return chain(options.clients)
-        .filter(isObject)
-        .map((clientOptions: RedisClientOptions) => {
-            const name = normalizeName(get(clientOptions, 'name'));
-            const token = getRedisClientToken(name);
-            return {
-                provide: token,
-                useFactory: (service: RedisService): RedisClient => service.get(name),
-                inject: [RedisService],
-            } satisfies Provider;
-        })
-        .compact()
-        .value();
+    const objectClients = options.clients.filter(isRedisClientOptions);
+    const mappedProviders: Provider[] = objectClients.map((clientOptions: RedisClientOptions) => {
+        const name = normalizeName(get(clientOptions, 'name'));
+        const token = getRedisClientToken(name);
+        return {
+            provide: token,
+            useFactory: (service: RedisService): RedisClient => service.get(name),
+            inject: [RedisService],
+        } satisfies Provider;
+    });
+
+    return mappedProviders;
 };
 
 const createFacadeProviders = (options: RedisModuleOptions): Provider[] => {
@@ -49,20 +52,19 @@ const createFacadeProviders = (options: RedisModuleOptions): Provider[] => {
         return [];
     }
 
-    return chain(options.clients)
-        .filter(isObject)
-        .map((clientOptions: RedisClientOptions) => {
-            const name = normalizeName(get(clientOptions, 'name'));
-            const clientToken = getRedisClientToken(name);
-            const facadeToken = getRedisFacadeToken(name);
-            return {
-                provide: facadeToken,
-                useFactory: (client: RedisClient): RedisFacade => new RedisFacade(client),
-                inject: [clientToken],
-            } satisfies Provider;
-        })
-        .compact()
-        .value();
+    const objectClients = options.clients.filter(isRedisClientOptions);
+    const mappedProviders: Provider[] = objectClients.map((clientOptions: RedisClientOptions) => {
+        const name = normalizeName(get(clientOptions, 'name'));
+        const clientToken = getRedisClientToken(name);
+        const facadeToken = getRedisFacadeToken(name);
+        return {
+            provide: facadeToken,
+            useFactory: (client: RedisClient): RedisFacade => new RedisFacade(client),
+            inject: [clientToken],
+        } satisfies Provider;
+    });
+
+    return mappedProviders;
 };
 
 @Global()
@@ -93,34 +95,24 @@ export class RedisModule {
             inject: [RedisService],
         };
 
-        const clientTokens = chain(options.clients)
-            .filter(isObject)
-            .map((c) => getRedisClientToken(normalizeName(get(c, 'name'))))
-            .compact()
-            .value();
+        const clientTokens = (options.clients || [])
+            .filter(isRedisClientOptions)
+            .map((c) => getRedisClientToken(normalizeName(get(c, 'name'))));
 
-        const facadeTokens = chain(options.clients)
-            .filter(isObject)
-            .map((c) => getRedisFacadeToken(normalizeName(get(c, 'name'))))
-            .compact()
-            .value();
+        const facadeTokens = (options.clients || [])
+            .filter(isRedisClientOptions)
+            .map((c) => getRedisFacadeToken(normalizeName(get(c, 'name'))));
 
         return {
             module: RedisModule,
-            providers: compact([
-                optionProvider,
-                serviceProvider,
-                defaultProvider,
-                ...clientProviders,
-                ...facadeProviders,
-            ]),
-            exports: compact([
+            providers: [optionProvider, serviceProvider, defaultProvider, ...clientProviders, ...facadeProviders],
+            exports: [
                 RedisService,
                 getRedisClientToken(REDIS_DEFAULT_CLIENT_NAME),
                 ...clientTokens,
                 getRedisFacadeToken(REDIS_DEFAULT_CLIENT_NAME),
                 ...facadeTokens,
-            ]),
+            ],
         };
     }
 
@@ -145,76 +137,60 @@ export class RedisModule {
             inject: [REDIS_MODULE_OPTIONS],
         };
 
-        // We cannot add providers after Nest compiles module metadata.
-        // So we predeclare proxy providers for the default client and any names listed in options.predeclare.
         const predeclareList = isArray(options.predeclare) ? options.predeclare : [];
+        const stringPredeclares = predeclareList.filter(isStringName);
 
-        const predeclaredProviders: Provider[] = chain(predeclareList)
-            .filter(isString)
-            .map((rawName): Provider => {
-                const name = normalizeName(rawName);
-                return {
-                    provide: getRedisClientToken(name),
-                    useFactory: (service: RedisService): RedisClient => service.get(name),
-                    inject: [RedisService],
-                } satisfies Provider;
-            })
-            .compact()
-            .value();
+        const predeclaredProviders: Provider[] = stringPredeclares.map((rawName): Provider => {
+            const name = normalizeName(rawName);
+            return {
+                provide: getRedisClientToken(name),
+                useFactory: (service: RedisService): RedisClient => service.get(name),
+                inject: [RedisService],
+            } satisfies Provider;
+        });
 
-        const proxyProviders: Provider[] = compact([
+        const proxyProviders: Provider[] = [
             {
                 provide: getRedisClientToken(REDIS_DEFAULT_CLIENT_NAME),
                 useFactory: (service: RedisService): RedisClient => service.get(REDIS_DEFAULT_CLIENT_NAME),
                 inject: [RedisService],
             },
             ...predeclaredProviders,
-        ]);
+        ];
 
-        const facadeProxyProviders: Provider[] = compact([
+        const predeclaredFacadeProxyProviders: Provider[] = stringPredeclares.map((rawName): Provider => {
+            const name = normalizeName(rawName);
+            return {
+                provide: getRedisFacadeToken(name),
+                useFactory: (service: RedisService): RedisFacade => new RedisFacade(service.get(name)),
+                inject: [RedisService],
+            } satisfies Provider;
+        });
+
+        const facadeProxyProviders: Provider[] = [
             {
                 provide: getRedisFacadeToken(REDIS_DEFAULT_CLIENT_NAME),
                 useFactory: (service: RedisService): RedisFacade =>
                     new RedisFacade(service.get(REDIS_DEFAULT_CLIENT_NAME)),
                 inject: [RedisService],
             },
-            ...chain(predeclareList)
-                .filter(isString)
-                .map((rawName): Provider => {
-                    const name = normalizeName(rawName);
-                    return {
-                        provide: getRedisFacadeToken(name),
-                        useFactory: (service: RedisService): RedisFacade => new RedisFacade(service.get(name)),
-                        inject: [RedisService],
-                    } satisfies Provider;
-                })
-                .compact()
-                .value(),
-        ]);
+            ...predeclaredFacadeProxyProviders,
+        ];
 
-        const predeclaredTokens = chain(predeclareList)
-            .filter(isString)
-            .map((n) => getRedisClientToken(normalizeName(n)))
-            .compact()
-            .value();
-
-        const predeclaredFacadeTokens = chain(predeclareList)
-            .filter(isString)
-            .map((n) => getRedisFacadeToken(normalizeName(n)))
-            .compact()
-            .value();
+        const predeclaredTokens = stringPredeclares.map((n) => getRedisClientToken(normalizeName(n)));
+        const predeclaredFacadeTokens = stringPredeclares.map((n) => getRedisFacadeToken(normalizeName(n)));
 
         return {
             module: RedisModule,
             imports: isArray(options.imports) ? options.imports : [],
-            providers: compact([asyncOptionsProvider, serviceProvider, ...proxyProviders, ...facadeProxyProviders]),
-            exports: compact([
+            providers: [asyncOptionsProvider, serviceProvider, ...proxyProviders, ...facadeProxyProviders],
+            exports: [
                 RedisService,
                 getRedisClientToken(REDIS_DEFAULT_CLIENT_NAME),
                 ...predeclaredTokens,
                 getRedisFacadeToken(REDIS_DEFAULT_CLIENT_NAME),
                 ...predeclaredFacadeTokens,
-            ]),
+            ],
         };
     }
 }
