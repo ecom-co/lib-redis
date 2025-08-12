@@ -1,38 +1,38 @@
 import type { Redis } from 'ioredis';
-import {
-    isString,
-    isNumber,
-    isBoolean,
-    isPlainObject,
-    isArray,
-    isObject,
-    isEmpty,
-    isNil,
-    isFunction,
-    attempt,
-    isError,
-    get,
-    set,
-    has,
-    cloneDeep,
-    debounce,
-    memoize as lodashMemoize,
-    chunk,
-    uniq,
-    flatten,
-    keyBy,
-    filter,
-    map,
-    forEach,
-    reduce,
-    some,
-    every,
-    isFinite,
-    toNumber,
-    toString,
-    toSafeInteger,
-    trim,
-} from 'lodash';
+import attempt from 'lodash/attempt';
+import chunk from 'lodash/chunk';
+import cloneDeep from 'lodash/cloneDeep';
+import debounce from 'lodash/debounce';
+import every from 'lodash/every';
+import filter from 'lodash/filter';
+import flatten from 'lodash/flatten';
+import forEach from 'lodash/forEach';
+import get from 'lodash/get';
+import has from 'lodash/has';
+import isArray from 'lodash/isArray';
+import isBoolean from 'lodash/isBoolean';
+import isEmpty from 'lodash/isEmpty';
+import isError from 'lodash/isError';
+import isFinite from 'lodash/isFinite';
+import isFunction from 'lodash/isFunction';
+import isNil from 'lodash/isNil';
+import isNumber from 'lodash/isNumber';
+import isObject from 'lodash/isObject';
+import isPlainObject from 'lodash/isPlainObject';
+import isString from 'lodash/isString';
+import keyBy from 'lodash/keyBy';
+import map from 'lodash/map';
+import memoize from 'lodash/memoize';
+import reduce from 'lodash/reduce';
+import set from 'lodash/set';
+import some from 'lodash/some';
+import toNumber from 'lodash/toNumber';
+import toSafeInteger from 'lodash/toSafeInteger';
+import toString from 'lodash/toString';
+import trim from 'lodash/trim';
+import uniq from 'lodash/uniq';
+
+const lodashMemoize = memoize;
 
 import type { RedisClient } from './redis.interfaces';
 
