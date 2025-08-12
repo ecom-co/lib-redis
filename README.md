@@ -42,6 +42,8 @@ import { RedisModule } from '@ecom-co/redis';
         //   db: 0,
         // },
       ],
+      // Optional: pass a Nest logger to see connect/ready/reconnecting/end/error lifecycle logs
+      logger: new Logger('RedisModule'),
     }),
   ],
 })

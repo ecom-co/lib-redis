@@ -1,4 +1,4 @@
-import type { ModuleMetadata } from '@nestjs/common';
+import type { LoggerService, ModuleMetadata } from '@nestjs/common';
 
 import type { Redis, Cluster, RedisOptions, ClusterNode, ClusterOptions } from 'ioredis';
 
@@ -37,6 +37,8 @@ export type RedisClientOptions = SingleClientOptions | ClusterClientOptions | Se
 
 export interface RedisModuleOptions {
     clients: RedisClientOptions[];
+    /** Optional Nest logger to receive connection lifecycle messages */
+    logger?: LoggerService;
 }
 
 export interface RedisModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
