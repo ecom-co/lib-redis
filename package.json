@@ -1,6 +1,6 @@
 {
   "name": "@ecom-co/redis",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "NestJS Redis module built on ioredis with multi-client support and optional health indicator",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
