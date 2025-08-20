@@ -1,4 +1,4 @@
-import type { Redis } from 'ioredis';
+/* eslint-disable max-lines */
 import attempt from 'lodash/attempt';
 import chunk from 'lodash/chunk';
 import cloneDeep from 'lodash/cloneDeep';
@@ -35,8 +35,45 @@ import uniq from 'lodash/uniq';
 const lodashMemoize = memoize;
 
 import type { RedisClient } from './redis.interfaces';
+import type { Redis } from 'ioredis';
 
-type Primitive = string | number | boolean | null;
+export type BatchOperation = {
+    amount?: number;
+    key: string;
+    operation: 'decr' | 'del' | 'get' | 'incr' | 'set';
+    options?: RedisSetOptions;
+    value?: unknown;
+};
+
+export type CacheStats = {
+    hitRate: number;
+    memoryUsage: string;
+    missRate: number;
+    totalKeys: number;
+    totalRequests: number;
+};
+
+export type HealthCheckResult = {
+    error?: string;
+    latency: number;
+    status: 'healthy' | 'unhealthy';
+    timestamp: number;
+};
+
+export type LockResult = {
+    error?: string;
+    ok: boolean;
+    release?: () => Promise<boolean>;
+    token?: string;
+    ttl?: number;
+};
+
+export type RateLimitResult = {
+    allowed: boolean;
+    remaining: number;
+    resetTime?: number;
+    retryAfter?: number;
+};
 
 export type RedisSetOptions = {
     /** Expire after N seconds (EX) */
@@ -55,61 +92,14 @@ export type RedisSetOptions = {
     get?: boolean;
 };
 
-export type BatchOperation = {
-    operation: 'set' | 'get' | 'del' | 'incr' | 'decr';
-    key: string;
-    value?: unknown;
-    options?: RedisSetOptions;
-    amount?: number;
-};
-
-export type CacheStats = {
-    totalKeys: number;
-    memoryUsage: string;
-    hitRate: number;
-    missRate: number;
-    totalRequests: number;
-};
-
-export type RateLimitResult = {
-    allowed: boolean;
-    remaining: number;
-    resetTime?: number;
-    retryAfter?: number;
-};
-
-export type HealthCheckResult = {
-    status: 'healthy' | 'unhealthy';
-    latency: number;
-    error?: string;
-    timestamp: number;
-};
-
-export type LockResult = {
-    ok: boolean;
-    token?: string;
-    release?: () => Promise<boolean>;
-    ttl?: number;
-    error?: string;
-};
+type Primitive = boolean | null | number | string;
 
 // ========== NEW INTERFACES ==========
-interface RedisFacadeConfig {
-    maxRetries: number;
-    retryDelay: number;
-    scanCount: number;
-    statsFlushInterval: number;
-    lockDefaultTtl: number;
-    circuitBreakerThreshold: number;
-    circuitBreakerTimeout: number;
-    bulkOperationChunkSize: number;
-}
-
-interface Logger {
-    debug: (message: string, meta?: any) => void;
-    info: (message: string, meta?: any) => void;
-    warn: (message: string, meta?: any) => void;
-    error: (message: string, error?: Error, meta?: any) => void;
+interface CircuitBreaker {
+    failures: number;
+    nextAttempt: number;
+    threshold: number;
+    timeout: number;
 }
 
 interface ConnectionHealth {
@@ -118,48 +108,67 @@ interface ConnectionHealth {
     reconnectAttempts: number;
 }
 
-interface CircuitBreaker {
-    failures: number;
-    threshold: number;
-    timeout: number;
-    nextAttempt: number;
+interface Logger {
+    debug: (message: string, meta?: Record<string, unknown>) => void;
+    error: (message: string, error?: Error, meta?: Record<string, unknown>) => void;
+    info: (message: string, meta?: Record<string, unknown>) => void;
+    warn: (message: string, meta?: Record<string, unknown>) => void;
+}
+
+interface RedisFacadeConfig {
+    bulkOperationChunkSize: number;
+    circuitBreakerThreshold: number;
+    circuitBreakerTimeout: number;
+    lockDefaultTtl: number;
+    maxRetries: number;
+    retryDelay: number;
+    scanCount: number;
+    statsFlushInterval: number;
 }
 
 const SAFE_JSON_INDICATORS = ['{', '[', '"'];
 
 const DEFAULT_CONFIG: RedisFacadeConfig = {
+    bulkOperationChunkSize: 1000,
+    circuitBreakerThreshold: 5,
+    circuitBreakerTimeout: 60000,
+    lockDefaultTtl: 30000,
     maxRetries: 3,
     retryDelay: 100,
     scanCount: 1000,
     statsFlushInterval: 5000,
-    lockDefaultTtl: 30000,
-    circuitBreakerThreshold: 5,
-    circuitBreakerTimeout: 60000,
-    bulkOperationChunkSize: 1000,
 };
 
 // ========== UTILITY FUNCTIONS ==========
 const safeToStringValue = (value: unknown): string => {
     try {
         if (isNil(value)) return 'null';
+
         if (isString(value)) return trim(value);
+
         if (isNumber(value) || isBoolean(value)) return toString(value);
+
         if (isObject(value)) return JSON.stringify(value);
+
         return toString(value);
     } catch (error) {
         /* eslint-disable-next-line no-console */
         console.warn('Failed to convert value to string:', error);
+
         return 'null';
     }
 };
 
-const safeTryParseJson = <T>(raw: string | null): T | null => {
+const safeTryParseJson = <T>(raw: null | string): null | T => {
     if (isNil(raw) || isEmpty(trim(raw))) return null;
+
     const trimmed = trim(raw);
     const firstChar = trimmed.charAt(0);
+
     if (!some(SAFE_JSON_INDICATORS, (indicator) => firstChar === indicator)) {
         return trimmed as unknown as T;
     }
+
     try {
         return JSON.parse(trimmed) as T;
     } catch {
@@ -169,24 +178,28 @@ const safeTryParseJson = <T>(raw: string | null): T | null => {
 
 const safeParseNumber = (value: unknown, defaultValue = 0): number => {
     if (isNumber(value) && isFinite(value)) return value;
+
     if (isString(value)) {
         const parsed = toNumber(value);
+
         return isFinite(parsed) ? parsed : defaultValue;
     }
+
     return defaultValue;
 };
 
 const safeParseInteger = (value: unknown, defaultValue = 0): number => {
     const num = safeParseNumber(value, defaultValue);
+
     return toSafeInteger(num);
 };
 
 const validateKey = (key: string): boolean => isString(key) && !isEmpty(trim(key));
 
 export class RedisFacade {
-    private readonly config: RedisFacadeConfig;
-    private readonly logger: Logger;
+    private readonly circuitBreaker: CircuitBreaker;
     private cleanup?: () => void;
+    private readonly config: RedisFacadeConfig;
 
     private readonly connectionHealth: ConnectionHealth = {
         isConnected: true,
@@ -194,16 +207,18 @@ export class RedisFacade {
         reconnectAttempts: 0,
     };
 
-    private readonly circuitBreaker: CircuitBreaker;
+    private debouncedSaveStats: ReturnType<typeof debounce> = debounce(() => {
+        // Empty function
+    }, 0);
+
+    private readonly logger: Logger;
 
     private readonly stats = {
+        errors: 0,
         hits: 0,
         misses: 0,
-        errors: 0,
         operations: 0,
     };
-
-    private debouncedSaveStats: ReturnType<typeof debounce> = debounce(() => {}, 0);
 
     constructor(
         private readonly client: RedisClient,
@@ -225,9 +240,9 @@ export class RedisFacade {
 
         this.circuitBreaker = {
             failures: 0,
+            nextAttempt: 0,
             threshold: this.config.circuitBreakerThreshold,
             timeout: this.config.circuitBreakerTimeout,
-            nextAttempt: 0,
         };
 
         this.setupDebouncedStats();
@@ -235,16 +250,6 @@ export class RedisFacade {
     }
 
     // ========== SETUP & CLEANUP METHODS ==========
-    private setupDebouncedStats(): void {
-        this.debouncedSaveStats = debounce(() => {
-            void this.persistStats();
-        }, this.config.statsFlushInterval);
-
-        this.cleanup = () => {
-            this.debouncedSaveStats.cancel();
-        };
-    }
-
     private setupConnectionHandlers(): void {
         if (this.isRedisClient(this.client)) {
             this.client.on?.('error', (error: Error) => {
@@ -265,6 +270,16 @@ export class RedisFacade {
         }
     }
 
+    private setupDebouncedStats(): void {
+        this.debouncedSaveStats = debounce(() => {
+            void this.persistStats();
+        }, this.config.statsFlushInterval);
+
+        this.cleanup = () => {
+            this.debouncedSaveStats.cancel();
+        };
+    }
+
     dispose(): void {
         this.cleanup?.();
     }
@@ -276,34 +291,15 @@ export class RedisFacade {
 
     // log method removed
 
-    private async withCircuitBreaker<T>(operation: () => Promise<T>, operationName = 'redis_operation'): Promise<T> {
-        // Check if circuit breaker is open
-        if (this.circuitBreaker.failures >= this.circuitBreaker.threshold) {
-            if (Date.now() < this.circuitBreaker.nextAttempt) {
-                const error = new Error(`Circuit breaker is open for ${operationName}`);
-                throw error;
-            }
+    private buildKey(key: string): string {
+        if (!validateKey(key)) {
+            throw new Error(`Invalid key: ${key}`);
         }
 
-        try {
-            const result = await operation();
-            // Reset failures on success
-            if (this.circuitBreaker.failures > 0) {
-                this.circuitBreaker.failures = 0;
-            }
-            return result;
-        } catch (error) {
-            this.circuitBreaker.failures++;
-
-            if (this.circuitBreaker.failures >= this.circuitBreaker.threshold) {
-                this.circuitBreaker.nextAttempt = Date.now() + this.circuitBreaker.timeout;
-            }
-
-            throw error;
-        }
+        return isEmpty(this.keyPrefix) ? key : `${this.keyPrefix}:${key}`;
     }
 
-    private createEnhancedError(message: string, originalError: unknown, context?: Record<string, any>): Error {
+    private createEnhancedError(message: string, originalError: unknown, context?: Record<string, unknown>): Error {
         const errorMessage = `${message}: ${get(originalError, 'message', 'Unknown error')}`;
         const enhancedError = new Error(errorMessage);
 
@@ -320,11 +316,37 @@ export class RedisFacade {
         return enhancedError;
     }
 
-    private buildKey(key: string): string {
-        if (!validateKey(key)) {
-            throw new Error(`Invalid key: ${key}`);
+    withPrefix(prefix: string): RedisFacade {
+        if (!isString(prefix) || isEmpty(trim(prefix))) {
+            throw new Error('Prefix must be a non-empty string');
         }
-        return isEmpty(this.keyPrefix) ? key : `${this.keyPrefix}:${key}`;
+
+        const nextPrefix = isEmpty(this.keyPrefix) ? prefix : `${this.keyPrefix}:${prefix}`;
+
+        return new RedisFacade(this.client, nextPrefix, this.config, this.logger);
+    }
+
+    private async persistStats(): Promise<void> {
+        try {
+            const statsKey = this.buildKey('__facade_stats__');
+
+            await (this.client as Redis).hmset(statsKey, {
+                errors: toString(this.stats.errors),
+                hits: toString(this.stats.hits),
+                misses: toString(this.stats.misses),
+                operations: toString(this.stats.operations),
+                timestamp: toString(Date.now()),
+            });
+        } catch {
+            /* eslint-disable-next-line no-console */
+            console.warn('Failed to persist stats');
+        }
+    }
+
+    private recordError(): void {
+        this.stats.errors++;
+        this.stats.operations++;
+        this.debouncedSaveStats();
     }
 
     private recordHit(): void {
@@ -339,45 +361,90 @@ export class RedisFacade {
         this.debouncedSaveStats();
     }
 
-    private recordError(): void {
-        this.stats.errors++;
-        this.stats.operations++;
-        this.debouncedSaveStats();
-    }
+    private async withCircuitBreaker<T>(operation: () => Promise<T>, operationName = 'redis_operation'): Promise<T> {
+        // Check if circuit breaker is open
+        if (this.circuitBreaker.failures >= this.circuitBreaker.threshold) {
+            if (Date.now() < this.circuitBreaker.nextAttempt) {
+                throw new Error(`Circuit breaker is open for ${operationName}`);
+            }
+        }
 
-    private async persistStats(): Promise<void> {
         try {
-            const statsKey = this.buildKey('__facade_stats__');
-            await (this.client as Redis).hmset(statsKey, {
-                hits: toString(this.stats.hits),
-                misses: toString(this.stats.misses),
-                errors: toString(this.stats.errors),
-                operations: toString(this.stats.operations),
-                timestamp: toString(Date.now()),
-            });
-        } catch {
-            /* eslint-disable-next-line no-console */
-            console.warn('Failed to persist stats');
+            const result = await operation();
+
+            // Reset failures on success
+            if (this.circuitBreaker.failures > 0) {
+                this.circuitBreaker.failures = 0;
+            }
+
+            return result;
+        } catch (error) {
+            this.circuitBreaker.failures++;
+
+            if (this.circuitBreaker.failures >= this.circuitBreaker.threshold) {
+                this.circuitBreaker.nextAttempt = Date.now() + this.circuitBreaker.timeout;
+            }
+
+            throw error;
         }
-    }
-
-    withPrefix(prefix: string): RedisFacade {
-        if (!isString(prefix) || isEmpty(trim(prefix))) {
-            throw new Error('Prefix must be a non-empty string');
-        }
-
-        const nextPrefix = isEmpty(this.keyPrefix) ? prefix : `${this.keyPrefix}:${prefix}`;
-
-        return new RedisFacade(this.client, nextPrefix, this.config, this.logger);
     }
 
     // ========== BASIC OPERATIONS ==========
+
+    async get<T = string>(key: string): Promise<null | T> {
+        return this.withCircuitBreaker(async () => {
+            try {
+                if (!this.isRedisClient(this.client)) {
+                    throw new Error('Invalid Redis client');
+                }
+
+                const raw = await this.client.get(this.buildKey(key));
+                const result = safeTryParseJson<T>(raw);
+
+                if (!isNil(result)) {
+                    this.recordHit();
+                } else {
+                    this.recordMiss();
+                }
+
+                return result;
+            } catch (error) {
+                this.recordError();
+                throw this.createEnhancedError(`Failed to get key ${key}`, error, { key });
+            }
+        }, 'get');
+    }
+
+    async getJson<T = unknown>(key: string): Promise<null | T> {
+        try {
+            const raw = await (this.client as Redis).get(this.buildKey(key));
+
+            if (isNil(raw)) {
+                this.recordMiss();
+
+                return null;
+            }
+
+            const parseResult = attempt<unknown>(() => JSON.parse(raw));
+
+            if (isError(parseResult)) {
+                throw new Error(`Failed to parse JSON for key ${key}: ${parseResult.message}`);
+            }
+
+            this.recordHit();
+
+            return parseResult as T;
+        } catch (error) {
+            this.recordError();
+            throw error;
+        }
+    }
 
     async set(
         key: string,
         value: Primitive | Record<string, unknown>,
         options?: RedisSetOptions,
-    ): Promise<string | null> {
+    ): Promise<null | string> {
         return this.withCircuitBreaker(async () => {
             try {
                 if (!this.isRedisClient(this.client)) {
@@ -388,13 +455,13 @@ export class RedisFacade {
                 const redisValue = safeToStringValue(value);
 
                 if (!options) {
-                    const result = await this.client.set(redisKey, redisValue);
-                    return result;
+                    return await this.client.set(redisKey, redisValue);
                 }
 
-                const { keepTtl, pxAtMs, exAtSec, pxMs, ttlSeconds, mode, get: returnOld } = options;
+                const { exAtSec, get: returnOld, keepTtl, mode, pxAtMs, pxMs, ttlSeconds } = options;
 
-                let result: string | null;
+                let result: null | string;
+
                 if (keepTtl === true) {
                     result = await this.client.set(redisKey, redisValue, 'KEEPTTL');
                 } else if (isNumber(pxAtMs)) {
@@ -418,69 +485,22 @@ export class RedisFacade {
                 if (returnOld === true) {
                     result = await this.client.set(redisKey, redisValue, 'GET');
                 }
+
                 return result;
             } catch (error) {
                 this.recordError();
-                const enhancedError = this.createEnhancedError(`Failed to set key ${key}`, error, { key, options });
-                throw enhancedError;
+                throw this.createEnhancedError(`Failed to set key ${key}`, error, { key, options });
             }
         }, 'set');
     }
 
-    async get<T = string>(key: string): Promise<T | null> {
-        return this.withCircuitBreaker(async () => {
-            try {
-                if (!this.isRedisClient(this.client)) {
-                    throw new Error('Invalid Redis client');
-                }
-
-                const raw = await this.client.get(this.buildKey(key));
-                const result = safeTryParseJson<T>(raw);
-
-                if (!isNil(result)) {
-                    this.recordHit();
-                } else {
-                    this.recordMiss();
-                }
-
-                return result;
-            } catch (error) {
-                this.recordError();
-                const enhancedError = this.createEnhancedError(`Failed to get key ${key}`, error, { key });
-                throw enhancedError;
-            }
-        }, 'get');
-    }
-
-    async setJson(key: string, value: unknown, options?: RedisSetOptions): Promise<string | null> {
+    async setJson(key: string, value: unknown, options?: RedisSetOptions): Promise<null | string> {
         try {
             const payload = JSON.stringify(value);
+
             return this.set(key, payload, options);
         } catch {
             throw new Error(`Failed to stringify value for key ${key}`);
-        }
-    }
-
-    async getJson<T = unknown>(key: string): Promise<T | null> {
-        try {
-            const raw = await (this.client as Redis).get(this.buildKey(key));
-
-            if (isNil(raw)) {
-                this.recordMiss();
-                return null;
-            }
-
-            const parseResult = attempt<unknown>(() => JSON.parse(raw));
-
-            if (isError(parseResult)) {
-                throw new Error(`Failed to parse JSON for key ${key}: ${parseResult.message}`);
-            }
-
-            this.recordHit();
-            return parseResult as T;
-        } catch (error) {
-            this.recordError();
-            throw error;
         }
     }
 
@@ -492,10 +512,13 @@ export class RedisFacade {
         }
 
         const cached = await this.get<T>(key);
+
         if (!isNil(cached)) return cached;
 
         const fresh = await loader();
+
         await this.set(key, fresh as Record<string, unknown>, { ttlSeconds: safeParseInteger(ttlSeconds) });
+
         return fresh;
     }
 
@@ -505,10 +528,13 @@ export class RedisFacade {
         }
 
         const cached = await this.get<T>(key);
+
         if (!isNil(cached)) return cached;
 
         const fresh = await loader();
+
         await this.set(key, fresh as Record<string, unknown>, options);
+
         return fresh;
     }
 
@@ -518,8 +544,10 @@ export class RedisFacade {
         ttlSeconds = 3600,
     ): (...args: TArgs) => Promise<TReturn> {
         const resolver = (...args: TArgs) => keyGenerator(...args);
+
         return lodashMemoize(async (...args: TArgs): Promise<TReturn> => {
             const cacheKey = keyGenerator(...args);
+
             return this.getOrSet(cacheKey, ttlSeconds, () => fn(...args));
         }, resolver);
     }
@@ -530,18 +558,64 @@ export class RedisFacade {
         }
 
         const fresh = await loader();
+
         await this.set(key, fresh as Record<string, unknown>, options);
+
         return fresh;
     }
 
     // ========== BATCH OPERATIONS WITH LODASH ==========
 
-    async mget<T = string>(keys: string[]): Promise<Array<T | null>> {
+    async executeBatch(operations: BatchOperation[]): Promise<unknown[]> {
+        if (!isArray(operations) || isEmpty(operations)) return [];
+
+        const validOps = filter(
+            operations,
+            (op) => isPlainObject(op) && validateKey(get(op, 'key')) && isString(get(op, 'operation')),
+        );
+
+        if (isEmpty(validOps)) return [];
+
+        const pipeline = (this.client as Redis).pipeline();
+
+        forEach(validOps, (op) => {
+            const prefixedKey = this.buildKey(op.key);
+
+            switch (op.operation) {
+                case 'decr':
+                    pipeline.decrby(prefixedKey, safeParseInteger(op.amount, 1));
+                    break;
+
+                case 'del':
+                    pipeline.del(prefixedKey);
+                    break;
+
+                case 'get':
+                    pipeline.get(prefixedKey);
+                    break;
+
+                case 'incr':
+                    pipeline.incrby(prefixedKey, safeParseInteger(op.amount, 1));
+                    break;
+
+                case 'set':
+                    pipeline.set(prefixedKey, safeToStringValue(op.value));
+                    break;
+            }
+        });
+
+        const results = await pipeline.exec();
+
+        return map(results, ([_err, result]) => (isNil(_err) ? result : null));
+    }
+
+    async mget<T = string>(keys: string[]): Promise<Array<null | T>> {
         return this.withCircuitBreaker(async () => {
             try {
                 if (!isArray(keys) || isEmpty(keys)) return [];
 
                 const validKeys = filter(keys, validateKey);
+
                 if (isEmpty(validKeys)) {
                     return [];
                 }
@@ -549,11 +623,12 @@ export class RedisFacade {
                 // Process in chunks for large key sets
                 if (validKeys.length > this.config.bulkOperationChunkSize) {
                     const chunks = chunk(validKeys, this.config.bulkOperationChunkSize);
-                    const results: Array<T | null> = [];
+                    const results: Array<null | T> = [];
 
                     for (const keyChunk of chunks) {
                         const prefixedKeys = map(keyChunk, (key) => this.buildKey(key));
                         const chunkValues = await (this.client as Redis).mget(...prefixedKeys);
+
                         results.push(...map(chunkValues, (value) => safeTryParseJson<T>(value)));
                     }
 
@@ -562,20 +637,18 @@ export class RedisFacade {
 
                 const prefixedKeys = map(validKeys, (key) => this.buildKey(key));
                 const values = await (this.client as Redis).mget(...prefixedKeys);
-                const results = map(values, (value) => safeTryParseJson<T>(value));
 
-                return results;
+                return map(values, (value) => safeTryParseJson<T>(value));
             } catch (error) {
                 this.recordError();
-                const enhancedError = this.createEnhancedError('Failed to execute mget operation', error, {
+                throw this.createEnhancedError('Failed to execute mget operation', error, {
                     keysCount: keys.length,
                 });
-                throw enhancedError;
             }
         }, 'mget');
     }
 
-    async mset(keyValuePairs: Array<{ key: string; value: unknown; options?: RedisSetOptions }>): Promise<void> {
+    async mset(keyValuePairs: Array<{ key: string; options?: RedisSetOptions; value: unknown }>): Promise<void> {
         return this.withCircuitBreaker(async () => {
             try {
                 if (!isArray(keyValuePairs) || isEmpty(keyValuePairs)) return;
@@ -610,66 +683,31 @@ export class RedisFacade {
 
                 // Handle complex pairs individually
                 if (!isEmpty(complexPairs)) {
-                    for (const { key, value, options } of complexPairs) {
+                    for (const { key, options, value } of complexPairs) {
                         await this.set(key, value as Primitive | Record<string, unknown>, options);
                     }
                 }
             } catch (error) {
-                const enhancedError = this.createEnhancedError('Failed to execute mset operation', error, {
+                throw this.createEnhancedError('Failed to execute mset operation', error, {
                     pairsCount: keyValuePairs.length,
                 });
-                throw enhancedError;
             }
         }, 'mset');
     }
 
-    async executeBatch(operations: BatchOperation[]): Promise<unknown[]> {
-        if (!isArray(operations) || isEmpty(operations)) return [];
-
-        const validOps = filter(
-            operations,
-            (op) => isPlainObject(op) && validateKey(get(op, 'key')) && isString(get(op, 'operation')),
-        );
-
-        if (isEmpty(validOps)) return [];
-
-        const pipeline = (this.client as Redis).pipeline();
-
-        forEach(validOps, (op) => {
-            const prefixedKey = this.buildKey(op.key);
-
-            switch (op.operation) {
-                case 'get':
-                    pipeline.get(prefixedKey);
-                    break;
-                case 'set':
-                    pipeline.set(prefixedKey, safeToStringValue(op.value));
-                    break;
-                case 'del':
-                    pipeline.del(prefixedKey);
-                    break;
-                case 'incr':
-                    pipeline.incrby(prefixedKey, safeParseInteger(op.amount, 1));
-                    break;
-                case 'decr':
-                    pipeline.decrby(prefixedKey, safeParseInteger(op.amount, 1));
-                    break;
-            }
-        });
-
-        const results = await pipeline.exec();
-        return map(results, ([_err, result]) => (isNil(_err) ? result : null));
-    }
-
     // ========== COUNTER OPERATIONS WITH LODASH ==========
 
-    async incr(key: string, amount = 1): Promise<number> {
-        const safeAmount = safeParseInteger(amount, 1);
-        const prefixedKey = this.buildKey(key);
+    async getCounter(key: string): Promise<number> {
+        const value = await this.get<string>(key);
 
-        return safeAmount === 1
-            ? (this.client as Redis).incr(prefixedKey)
-            : (this.client as Redis).incrby(prefixedKey, safeAmount);
+        return safeParseInteger(value, 0);
+    }
+
+    async setCounter(key: string, value: number, ttlSeconds?: number): Promise<void> {
+        const safeValue = safeParseInteger(value, 0);
+        const options = isNumber(ttlSeconds) ? { ttlSeconds: safeParseInteger(ttlSeconds) } : undefined;
+
+        await this.set(key, safeValue, options);
     }
 
     async decr(key: string, amount = 1): Promise<number> {
@@ -681,29 +719,29 @@ export class RedisFacade {
             : (this.client as Redis).decrby(prefixedKey, safeAmount);
     }
 
+    async incr(key: string, amount = 1): Promise<number> {
+        const safeAmount = safeParseInteger(amount, 1);
+        const prefixedKey = this.buildKey(key);
+
+        return safeAmount === 1
+            ? (this.client as Redis).incr(prefixedKey)
+            : (this.client as Redis).incrby(prefixedKey, safeAmount);
+    }
+
     async incrFloat(key: string, amount: number): Promise<string> {
         const safeAmount = safeParseNumber(amount, 0);
+
         return (this.client as Redis).incrbyfloat(this.buildKey(key), safeAmount);
     }
 
-    async setCounter(key: string, value: number, ttlSeconds?: number): Promise<void> {
-        const safeValue = safeParseInteger(value, 0);
-        const options = isNumber(ttlSeconds) ? { ttlSeconds: safeParseInteger(ttlSeconds) } : undefined;
-        await this.set(key, safeValue, options);
-    }
-
-    async getCounter(key: string): Promise<number> {
-        const value = await this.get<string>(key);
-        return safeParseInteger(value, 0);
-    }
-
-    async multiIncr(counters: Array<{ key: string; amount?: number }>): Promise<number[]> {
+    async multiIncr(counters: Array<{ amount?: number; key: string }>): Promise<number[]> {
         if (!isArray(counters) || isEmpty(counters)) return [];
 
         const validCounters = filter(counters, (counter) => isPlainObject(counter) && validateKey(get(counter, 'key')));
 
         const pipeline = (this.client as Redis).pipeline();
-        forEach(validCounters, ({ key, amount }) => {
+
+        forEach(validCounters, ({ amount, key }) => {
             const safeAmount = safeParseInteger(amount, 1);
             const prefixedKey = this.buildKey(key);
 
@@ -715,10 +753,21 @@ export class RedisFacade {
         });
 
         const results = await pipeline.exec();
+
         return map(results, ([_err, result]) => safeParseInteger(result, 0));
     }
 
     // ========== KEY MANAGEMENT WITH LODASH ==========
+
+    async exists(...keys: string[]): Promise<number> {
+        const validKeys = filter(keys, validateKey);
+
+        if (isEmpty(validKeys)) return 0;
+
+        const prefixedKeys = map(validKeys, (key) => this.buildKey(key));
+
+        return (this.client as Redis).exists(...prefixedKeys);
+    }
 
     async del(keyOrPattern: string): Promise<number> {
         return this.withCircuitBreaker(async () => {
@@ -726,11 +775,11 @@ export class RedisFacade {
                 if (!validateKey(keyOrPattern)) return 0;
 
                 if (!keyOrPattern.includes('*')) {
-                    const result = await (this.client as Redis).del(this.buildKey(keyOrPattern));
-                    return result;
+                    return await (this.client as Redis).del(this.buildKey(keyOrPattern));
                 }
 
                 const keys = await this.scanKeys(keyOrPattern);
+
                 if (isEmpty(keys)) {
                     return 0;
                 }
@@ -755,51 +804,60 @@ export class RedisFacade {
 
                 return totalDeleted;
             } catch (error) {
-                const enhancedError = this.createEnhancedError(
-                    `Failed to delete keys for pattern ${keyOrPattern}`,
-                    error,
-                    { pattern: keyOrPattern },
-                );
-                throw enhancedError;
+                throw this.createEnhancedError(`Failed to delete keys for pattern ${keyOrPattern}`, error, {
+                    pattern: keyOrPattern,
+                });
             }
         }, 'del');
-    }
-
-    async exists(...keys: string[]): Promise<number> {
-        const validKeys = filter(keys, validateKey);
-        if (isEmpty(validKeys)) return 0;
-
-        const prefixedKeys = map(validKeys, (key) => this.buildKey(key));
-        return (this.client as Redis).exists(...prefixedKeys);
     }
 
     async expire(key: string, ttlSeconds: number): Promise<boolean> {
         const safeTtl = safeParseInteger(ttlSeconds);
         const result = await (this.client as Redis).expire(this.buildKey(key), safeTtl);
+
         return result === 1;
     }
 
     async expireAt(key: string, timestamp: number): Promise<boolean> {
         const safeTimestamp = safeParseInteger(timestamp);
         const result = await (this.client as Redis).expireat(this.buildKey(key), safeTimestamp);
+
         return result === 1;
     }
 
-    async ttl(key: string): Promise<number> {
-        return (this.client as Redis).ttl(this.buildKey(key));
+    async keys(pattern = '*'): Promise<string[]> {
+        const fullPattern = isEmpty(this.keyPrefix) ? pattern : `${this.keyPrefix}:${pattern}`;
+        const keys = await (this.client as Redis).keys(fullPattern);
+
+        return isArray(keys) ? keys : [];
+    }
+
+    async keysByPattern(patterns: string[]): Promise<Record<string, string[]>> {
+        if (!isArray(patterns) || isEmpty(patterns)) return {};
+
+        const result: Record<string, string[]> = {};
+
+        await Promise.all(
+            map(patterns, async (pattern) => {
+                set(result, pattern, await this.scanKeys(pattern));
+            }),
+        );
+
+        return result;
     }
 
     async persist(key: string): Promise<boolean> {
         const result = await (this.client as Redis).persist(this.buildKey(key));
+
         return result === 1;
+    }
+
+    async randomKey(): Promise<null | string> {
+        return (this.client as Redis).randomkey();
     }
 
     async rename(oldKey: string, newKey: string): Promise<'OK'> {
         return (this.client as Redis).rename(this.buildKey(oldKey), this.buildKey(newKey));
-    }
-
-    async type(key: string): Promise<string> {
-        return (this.client as Redis).type(this.buildKey(key));
     }
 
     async scanKeys(pattern: string, count = this.config.scanCount): Promise<string[]> {
@@ -818,6 +876,7 @@ export class RedisFacade {
                         'COUNT',
                         safeCount,
                     );
+
                     cursor = next;
 
                     if (isArray(foundKeys) && !isEmpty(foundKeys)) {
@@ -830,87 +889,47 @@ export class RedisFacade {
                     }
                 } while (cursor !== '0');
 
-                const result = Array.from(keys);
-                return result;
+                return Array.from(keys);
             } catch (error) {
-                const enhancedError = this.createEnhancedError(`Failed to scan keys for pattern ${pattern}`, error, {
-                    pattern,
+                throw this.createEnhancedError(`Failed to scan keys for pattern ${pattern}`, error, {
                     count,
+                    pattern,
                 });
-                throw enhancedError;
             }
         }, 'scan');
     }
 
-    async keys(pattern = '*'): Promise<string[]> {
-        const fullPattern = isEmpty(this.keyPrefix) ? pattern : `${this.keyPrefix}:${pattern}`;
-        const keys = await (this.client as Redis).keys(fullPattern);
-        return isArray(keys) ? keys : [];
+    async ttl(key: string): Promise<number> {
+        return (this.client as Redis).ttl(this.buildKey(key));
     }
 
-    async randomKey(): Promise<string | null> {
-        return (this.client as Redis).randomkey();
-    }
-
-    async keysByPattern(patterns: string[]): Promise<Record<string, string[]>> {
-        if (!isArray(patterns) || isEmpty(patterns)) return {};
-
-        const result: Record<string, string[]> = {};
-
-        await Promise.all(
-            map(patterns, async (pattern) => {
-                result[pattern] = await this.scanKeys(pattern);
-            }),
-        );
-
-        return result;
+    async type(key: string): Promise<string> {
+        return (this.client as Redis).type(this.buildKey(key));
     }
 
     // ========== HASH OPERATIONS WITH LODASH ==========
 
-    async hmsetObject(key: string, obj: Record<string, Primitive>): Promise<'OK'> {
-        if (!isPlainObject(obj) || isEmpty(obj)) {
-            throw new Error('hmsetObject requires a non-empty plain object');
-        }
-
-        const flat: string[] = flatten(map(obj, (value, field) => [field, safeToStringValue(value)]));
-
-        return (this.client as Redis).hmset(this.buildKey(key), ...(flat as [string, string]));
-    }
-
-    async hmgetObject<T extends Record<string, unknown>>(key: string, fields: Array<keyof T & string>): Promise<T> {
-        if (!isArray(fields) || isEmpty(fields)) {
-            return {} as T;
-        }
-
+    async hdel(key: string, ...fields: string[]): Promise<number> {
         const validFields = filter(fields, (field) => isString(field) && !isEmpty(field));
-        if (isEmpty(validFields)) return {} as T;
 
-        const values = await (this.client as Redis).hmget(this.buildKey(key), ...(validFields as string[]));
+        if (isEmpty(validFields)) return 0;
 
-        const result = reduce(
-            validFields,
-            (acc, field, index) => {
-                set(acc, field, safeTryParseJson(get(values, index)));
-                return acc;
-            },
-            {} as Record<string, unknown>,
-        );
-
-        return result as T;
+        return (this.client as Redis).hdel(this.buildKey(key), ...validFields);
     }
 
-    async hset(key: string, field: string, value: unknown): Promise<number> {
-        if (!isString(field) || isEmpty(field)) {
-            throw new Error('Field must be a non-empty string');
-        }
-        return (this.client as Redis).hset(this.buildKey(key), field, safeToStringValue(value));
+    async hexists(key: string, field: string): Promise<boolean> {
+        if (!isString(field) || isEmpty(field)) return false;
+
+        const result = await (this.client as Redis).hexists(this.buildKey(key), field);
+
+        return result === 1;
     }
 
-    async hget<T = string>(key: string, field: string): Promise<T | null> {
+    async hget<T = string>(key: string, field: string): Promise<null | T> {
         if (!isString(field) || isEmpty(field)) return null;
 
         const raw = await (this.client as Redis).hget(this.buildKey(key), field);
+
         return safeTryParseJson<T>(raw);
     }
 
@@ -923,6 +942,7 @@ export class RedisFacade {
             result,
             (acc, value, field) => {
                 set(acc, field, safeTryParseJson(value));
+
                 return acc;
             },
             {} as Record<string, unknown>,
@@ -931,40 +951,48 @@ export class RedisFacade {
         return parsed as T;
     }
 
-    async hdel(key: string, ...fields: string[]): Promise<number> {
-        const validFields = filter(fields, (field) => isString(field) && !isEmpty(field));
-        if (isEmpty(validFields)) return 0;
+    async hincrby(key: string, field: string, amount: number): Promise<number> {
+        if (!isString(field) || isEmpty(field)) {
+            throw new Error('Field must be a non-empty string');
+        }
 
-        return (this.client as Redis).hdel(this.buildKey(key), ...validFields);
-    }
+        const safeAmount = safeParseInteger(amount, 1);
 
-    async hexists(key: string, field: string): Promise<boolean> {
-        if (!isString(field) || isEmpty(field)) return false;
-
-        const result = await (this.client as Redis).hexists(this.buildKey(key), field);
-        return result === 1;
+        return (this.client as Redis).hincrby(this.buildKey(key), field, safeAmount);
     }
 
     async hkeys(key: string): Promise<string[]> {
         const keys = await (this.client as Redis).hkeys(this.buildKey(key));
-        return isArray(keys) ? keys : [];
-    }
 
-    async hvals(key: string): Promise<string[]> {
-        const values = await (this.client as Redis).hvals(this.buildKey(key));
-        return isArray(values) ? values : [];
+        return isArray(keys) ? keys : [];
     }
 
     async hlen(key: string): Promise<number> {
         return (this.client as Redis).hlen(this.buildKey(key));
     }
 
-    async hincrby(key: string, field: string, amount: number): Promise<number> {
-        if (!isString(field) || isEmpty(field)) {
-            throw new Error('Field must be a non-empty string');
+    async hmgetObject<T extends Record<string, unknown>>(key: string, fields: Array<keyof T & string>): Promise<T> {
+        if (!isArray(fields) || isEmpty(fields)) {
+            return {} as T;
         }
-        const safeAmount = safeParseInteger(amount, 1);
-        return (this.client as Redis).hincrby(this.buildKey(key), field, safeAmount);
+
+        const validFields = filter(fields, (field) => isString(field) && !isEmpty(field));
+
+        if (isEmpty(validFields)) return {} as T;
+
+        const values = await (this.client as Redis).hmget(this.buildKey(key), ...(validFields as string[]));
+
+        const result = reduce(
+            validFields,
+            (acc, field, index) => {
+                set(acc, field, safeTryParseJson(get(values, index)));
+
+                return acc;
+            },
+            {} as Record<string, unknown>,
+        );
+
+        return result as T;
     }
 
     async hmsetMultiple(operations: Array<{ key: string; obj: Record<string, Primitive> }>): Promise<void> {
@@ -981,54 +1009,80 @@ export class RedisFacade {
 
         forEach(validOps, ({ key, obj }) => {
             const flat = flatten(map(obj, (value, field) => [field, safeToStringValue(value)]));
+
             pipeline.hmset(this.buildKey(key), ...(flat as [string, string]));
         });
 
         await pipeline.exec();
     }
 
+    async hmsetObject(key: string, obj: Record<string, Primitive>): Promise<'OK'> {
+        if (!isPlainObject(obj) || isEmpty(obj)) {
+            throw new Error('hmsetObject requires a non-empty plain object');
+        }
+
+        const flat: string[] = flatten(map(obj, (value, field) => [field, safeToStringValue(value)]));
+
+        return (this.client as Redis).hmset(this.buildKey(key), ...(flat as [string, string]));
+    }
+
+    async hset(key: string, field: string, value: unknown): Promise<number> {
+        if (!isString(field) || isEmpty(field)) {
+            throw new Error('Field must be a non-empty string');
+        }
+
+        return (this.client as Redis).hset(this.buildKey(key), field, safeToStringValue(value));
+    }
+
+    async hvals(key: string): Promise<string[]> {
+        const values = await (this.client as Redis).hvals(this.buildKey(key));
+
+        return isArray(values) ? values : [];
+    }
+
     // ========== LIST OPERATIONS WITH LODASH ==========
+
+    async lindex<T = string>(key: string, index: number): Promise<null | T> {
+        const safeIndex = safeParseInteger(index, 0);
+        const raw = await (this.client as Redis).lindex(this.buildKey(key), safeIndex);
+
+        return safeTryParseJson<T>(raw);
+    }
+
+    async linsert<T = string>(key: string, position: 'AFTER' | 'BEFORE', pivot: T, element: T): Promise<number> {
+        const k = this.buildKey(key);
+        const p = safeToStringValue(pivot);
+        const e = safeToStringValue(element);
+
+        return position === 'BEFORE'
+            ? (this.client as Redis).linsert(k, 'BEFORE', p, e)
+            : (this.client as Redis).linsert(k, 'AFTER', p, e);
+    }
+
+    async llen(key: string): Promise<number> {
+        return (this.client as Redis).llen(this.buildKey(key));
+    }
+
+    async lpop<T = string>(key: string, count?: number): Promise<null | T | T[]> {
+        const prefixedKey = this.buildKey(key);
+
+        if (isNumber(count) && count > 1) {
+            const values = await (this.client as Redis).lpop(prefixedKey, count);
+
+            return isArray(values) ? map(values, (v) => safeTryParseJson<T>(v) as T) : null;
+        }
+
+        const raw = await (this.client as Redis).lpop(prefixedKey);
+
+        return safeTryParseJson<T>(raw);
+    }
 
     async lpush(key: string, ...values: unknown[]): Promise<number> {
         if (isEmpty(values)) return 0;
 
         const stringValues = map(values, safeToStringValue);
+
         return (this.client as Redis).lpush(this.buildKey(key), ...stringValues);
-    }
-
-    async rpush(key: string, ...values: unknown[]): Promise<number> {
-        if (isEmpty(values)) return 0;
-
-        const stringValues = map(values, safeToStringValue);
-        return (this.client as Redis).rpush(this.buildKey(key), ...stringValues);
-    }
-
-    async lpop<T = string>(key: string, count?: number): Promise<T | T[] | null> {
-        const prefixedKey = this.buildKey(key);
-
-        if (isNumber(count) && count > 1) {
-            const values = await (this.client as Redis).lpop(prefixedKey, count);
-            return isArray(values) ? map(values, (v) => safeTryParseJson<T>(v) as T) : null;
-        }
-
-        const raw = await (this.client as Redis).lpop(prefixedKey);
-        return safeTryParseJson<T>(raw);
-    }
-
-    async rpop<T = string>(key: string, count?: number): Promise<T | T[] | null> {
-        const prefixedKey = this.buildKey(key);
-
-        if (isNumber(count) && count > 1) {
-            const values = await (this.client as Redis).rpop(prefixedKey, count);
-            return isArray(values) ? map(values, (v) => safeTryParseJson<T>(v) as T) : null;
-        }
-
-        const raw = await (this.client as Redis).rpop(prefixedKey);
-        return safeTryParseJson<T>(raw);
-    }
-
-    async llen(key: string): Promise<number> {
-        return (this.client as Redis).llen(this.buildKey(key));
     }
 
     async lrange<T = string>(key: string, start: number, stop: number): Promise<T[]> {
@@ -1036,7 +1090,14 @@ export class RedisFacade {
         const safeStop = safeParseInteger(stop, -1);
 
         const values = await (this.client as Redis).lrange(this.buildKey(key), safeStart, safeStop);
+
         return map(values, (v) => safeTryParseJson<T>(v) as T);
+    }
+
+    async lrem<T = string>(key: string, count: number, element: T): Promise<number> {
+        const safeCount = safeParseInteger(count, 0);
+
+        return (this.client as Redis).lrem(this.buildKey(key), safeCount, safeToStringValue(element));
     }
 
     async ltrim(key: string, start: number, stop: number): Promise<'OK'> {
@@ -1046,24 +1107,26 @@ export class RedisFacade {
         return (this.client as Redis).ltrim(this.buildKey(key), safeStart, safeStop);
     }
 
-    async lindex<T = string>(key: string, index: number): Promise<T | null> {
-        const safeIndex = safeParseInteger(index, 0);
-        const raw = await (this.client as Redis).lindex(this.buildKey(key), safeIndex);
+    async rpop<T = string>(key: string, count?: number): Promise<null | T | T[]> {
+        const prefixedKey = this.buildKey(key);
+
+        if (isNumber(count) && count > 1) {
+            const values = await (this.client as Redis).rpop(prefixedKey, count);
+
+            return isArray(values) ? map(values, (v) => safeTryParseJson<T>(v) as T) : null;
+        }
+
+        const raw = await (this.client as Redis).rpop(prefixedKey);
+
         return safeTryParseJson<T>(raw);
     }
 
-    async linsert<T = string>(key: string, position: 'BEFORE' | 'AFTER', pivot: T, element: T): Promise<number> {
-        const k = this.buildKey(key);
-        const p = safeToStringValue(pivot);
-        const e = safeToStringValue(element);
-        return position === 'BEFORE'
-            ? (this.client as Redis).linsert(k, 'BEFORE', p, e)
-            : (this.client as Redis).linsert(k, 'AFTER', p, e);
-    }
+    async rpush(key: string, ...values: unknown[]): Promise<number> {
+        if (isEmpty(values)) return 0;
 
-    async lrem<T = string>(key: string, count: number, element: T): Promise<number> {
-        const safeCount = safeParseInteger(count, 0);
-        return (this.client as Redis).lrem(this.buildKey(key), safeCount, safeToStringValue(element));
+        const stringValues = map(values, safeToStringValue);
+
+        return (this.client as Redis).rpush(this.buildKey(key), ...stringValues);
     }
 
     // ========== SET OPERATIONS WITH LODASH ==========
@@ -1072,78 +1135,92 @@ export class RedisFacade {
         if (isEmpty(members)) return 0;
 
         const stringMembers = uniq(map(members, safeToStringValue));
+
         return (this.client as Redis).sadd(this.buildKey(key), ...stringMembers);
-    }
-
-    async srem(key: string, ...members: unknown[]): Promise<number> {
-        if (isEmpty(members)) return 0;
-
-        const stringMembers = map(members, safeToStringValue);
-        return (this.client as Redis).srem(this.buildKey(key), ...stringMembers);
-    }
-
-    async smembers<T = string>(key: string): Promise<T[]> {
-        const members = await (this.client as Redis).smembers(this.buildKey(key));
-        return map(members, (m) => safeTryParseJson<T>(m) as T);
-    }
-
-    async sismember(key: string, member: unknown): Promise<boolean> {
-        const result = await (this.client as Redis).sismember(this.buildKey(key), safeToStringValue(member));
-        return result === 1;
     }
 
     async scard(key: string): Promise<number> {
         return (this.client as Redis).scard(this.buildKey(key));
     }
 
-    async spop<T = string>(key: string, count?: number): Promise<T | T[] | null> {
-        const prefixedKey = this.buildKey(key);
-
-        if (isNumber(count) && count > 1) {
-            const members = await (this.client as Redis).spop(prefixedKey, count);
-            return isArray(members) ? map(members, (m) => safeTryParseJson<T>(m) as T) : null;
-        }
-
-        const member = await (this.client as Redis).spop(prefixedKey);
-        return member ? safeTryParseJson<T>(member) : null;
-    }
-
-    async srandmember<T = string>(key: string, count?: number): Promise<T | T[] | null> {
-        const prefixedKey = this.buildKey(key);
-
-        if (isNumber(count)) {
-            const members = await (this.client as Redis).srandmember(prefixedKey, count);
-            return isArray(members) ? map(members, (m) => safeTryParseJson<T>(m) as T) : null;
-        }
-
-        const member = await (this.client as Redis).srandmember(prefixedKey);
-        return member ? safeTryParseJson<T>(member) : null;
-    }
-
-    async sunion<T = string>(...keys: string[]): Promise<T[]> {
+    async sdiff<T = string>(...keys: string[]): Promise<T[]> {
         const validKeys = filter(keys, validateKey);
+
         if (isEmpty(validKeys)) return [];
 
         const prefixedKeys = map(validKeys, (key) => this.buildKey(key));
-        const members = await (this.client as Redis).sunion(...prefixedKeys);
+        const members = await (this.client as Redis).sdiff(...prefixedKeys);
+
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
     async sinter<T = string>(...keys: string[]): Promise<T[]> {
         const validKeys = filter(keys, validateKey);
+
         if (isEmpty(validKeys)) return [];
 
         const prefixedKeys = map(validKeys, (key) => this.buildKey(key));
         const members = await (this.client as Redis).sinter(...prefixedKeys);
+
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
-    async sdiff<T = string>(...keys: string[]): Promise<T[]> {
+    async sismember(key: string, member: unknown): Promise<boolean> {
+        const result = await (this.client as Redis).sismember(this.buildKey(key), safeToStringValue(member));
+
+        return result === 1;
+    }
+
+    async smembers<T = string>(key: string): Promise<T[]> {
+        const members = await (this.client as Redis).smembers(this.buildKey(key));
+
+        return map(members, (m) => safeTryParseJson<T>(m) as T);
+    }
+
+    async spop<T = string>(key: string, count?: number): Promise<null | T | T[]> {
+        const prefixedKey = this.buildKey(key);
+
+        if (isNumber(count) && count > 1) {
+            const members = await (this.client as Redis).spop(prefixedKey, count);
+
+            return isArray(members) ? map(members, (m) => safeTryParseJson<T>(m) as T) : null;
+        }
+
+        const member = await (this.client as Redis).spop(prefixedKey);
+
+        return member ? safeTryParseJson<T>(member) : null;
+    }
+
+    async srandmember<T = string>(key: string, count?: number): Promise<null | T | T[]> {
+        const prefixedKey = this.buildKey(key);
+
+        if (isNumber(count)) {
+            const members = await (this.client as Redis).srandmember(prefixedKey, count);
+
+            return isArray(members) ? map(members, (m) => safeTryParseJson<T>(m) as T) : null;
+        }
+
+        const member = await (this.client as Redis).srandmember(prefixedKey);
+
+        return member ? safeTryParseJson<T>(member) : null;
+    }
+
+    async srem(key: string, ...members: unknown[]): Promise<number> {
+        if (isEmpty(members)) return 0;
+
+        const stringMembers = map(members, safeToStringValue);
+
+        return (this.client as Redis).srem(this.buildKey(key), ...stringMembers);
+    }
+
+    async sunion<T = string>(...keys: string[]): Promise<T[]> {
         const validKeys = filter(keys, validateKey);
+
         if (isEmpty(validKeys)) return [];
 
         const prefixedKeys = map(validKeys, (key) => this.buildKey(key));
-        const members = await (this.client as Redis).sdiff(...prefixedKeys);
+        const members = await (this.client as Redis).sunion(...prefixedKeys);
+
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
@@ -1155,16 +1232,18 @@ export class RedisFacade {
         }
 
         const safePairs: Array<number | string> = [];
+
         for (let i = 0; i < scoreMembers.length; i += 2) {
-            const score = safeParseNumber(scoreMembers[i], 0);
-            const member = safeToStringValue(scoreMembers[i + 1]);
+            const score = safeParseNumber(get(scoreMembers, i), 0);
+            const member = safeToStringValue(get(scoreMembers, i + 1));
+
             safePairs.push(score, member);
         }
 
         return (this.client as Redis).zadd(this.buildKey(key), ...safePairs);
     }
 
-    async zaddObject(key: string, members: Array<{ score: number; member: unknown }>): Promise<number> {
+    async zaddObject(key: string, members: Array<{ member: unknown; score: number }>): Promise<number> {
         if (!isArray(members) || isEmpty(members)) return 0;
 
         const validMembers = filter(members, (m) => isPlainObject(m) && has(m, 'score') && has(m, 'member'));
@@ -1172,17 +1251,20 @@ export class RedisFacade {
         if (isEmpty(validMembers)) return 0;
 
         const scoreMembers = flatten(
-            map(validMembers, ({ score, member }) => [safeParseNumber(score, 0), safeToStringValue(member)]),
+            map(validMembers, ({ member, score }) => [safeParseNumber(score, 0), safeToStringValue(member)]),
         );
 
         return (this.client as Redis).zadd(this.buildKey(key), ...scoreMembers);
     }
 
-    async zrem(key: string, ...members: unknown[]): Promise<number> {
-        if (isEmpty(members)) return 0;
+    async zcard(key: string): Promise<number> {
+        return (this.client as Redis).zcard(this.buildKey(key));
+    }
 
-        const stringMembers = map(members, safeToStringValue);
-        return (this.client as Redis).zrem(this.buildKey(key), ...stringMembers);
+    async zincrby(key: string, increment: number, member: unknown): Promise<string> {
+        const safeIncrement = safeParseNumber(increment, 0);
+
+        return (this.client as Redis).zincrby(this.buildKey(key), safeIncrement, safeToStringValue(member));
     }
 
     async zrange<T = string>(
@@ -1190,7 +1272,7 @@ export class RedisFacade {
         start: number,
         stop: number,
         withScores = false,
-    ): Promise<T[] | Array<{ member: T; score: number }>> {
+    ): Promise<Array<{ member: T; score: number }> | T[]> {
         const safeStart = safeParseInteger(start, 0);
         const safeStop = safeParseInteger(stop, -1);
         const prefixedKey = this.buildKey(key);
@@ -1201,14 +1283,16 @@ export class RedisFacade {
 
             for (let i = 0; i < result.length; i += 2) {
                 pairs.push({
-                    member: safeTryParseJson<T>(result[i]) as T,
-                    score: safeParseNumber(result[i + 1], 0),
+                    member: safeTryParseJson<T>(get(result, i)) as T,
+                    score: safeParseNumber(get(result, i + 1), 0),
                 });
             }
+
             return pairs;
         }
 
         const members = await (this.client as Redis).zrange(prefixedKey, safeStart, safeStop);
+
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
@@ -1216,11 +1300,13 @@ export class RedisFacade {
         key: string,
         min: number | string,
         max: number | string,
-        options?: { withScores?: boolean; limit?: { offset: number; count: number } },
-    ): Promise<T[] | Array<{ member: T; score: number }>> {
+        options?: { limit?: { count: number; offset: number }; withScores?: boolean },
+    ): Promise<Array<{ member: T; score: number }> | T[]> {
         const prefixedKey = this.buildKey(key);
         const flags: string[] = [];
+
         if (options?.withScores) flags.push('WITHSCORES');
+
         if (options?.limit) {
             flags.push(
                 'LIMIT',
@@ -1236,55 +1322,49 @@ export class RedisFacade {
 
         if (options?.withScores) {
             const pairs: Array<{ member: T; score: number }> = [];
+
             for (let i = 0; i < result.length; i += 2) {
                 pairs.push({
-                    member: safeTryParseJson<T>(result[i]) as T,
-                    score: safeParseNumber(result[i + 1], 0),
+                    member: safeTryParseJson<T>(get(result, i)) as T,
+                    score: safeParseNumber(get(result, i + 1), 0),
                 });
             }
+
             return pairs;
         }
 
         return map(result, (m) => safeTryParseJson<T>(m) as T);
     }
 
-    async zcard(key: string): Promise<number> {
-        return (this.client as Redis).zcard(this.buildKey(key));
-    }
-
-    async zscore(key: string, member: unknown): Promise<number | null> {
-        const score = await (this.client as Redis).zscore(this.buildKey(key), safeToStringValue(member));
-        return score ? safeParseNumber(score) : null;
-    }
-
-    async zrank(key: string, member: unknown): Promise<number | null> {
+    async zrank(key: string, member: unknown): Promise<null | number> {
         return (this.client as Redis).zrank(this.buildKey(key), safeToStringValue(member));
     }
 
-    async zrevrank(key: string, member: unknown): Promise<number | null> {
+    async zrem(key: string, ...members: unknown[]): Promise<number> {
+        if (isEmpty(members)) return 0;
+
+        const stringMembers = map(members, safeToStringValue);
+
+        return (this.client as Redis).zrem(this.buildKey(key), ...stringMembers);
+    }
+
+    async zrevrank(key: string, member: unknown): Promise<null | number> {
         return (this.client as Redis).zrevrank(this.buildKey(key), safeToStringValue(member));
     }
 
-    async zincrby(key: string, increment: number, member: unknown): Promise<string> {
-        const safeIncrement = safeParseNumber(increment, 0);
-        return (this.client as Redis).zincrby(this.buildKey(key), safeIncrement, safeToStringValue(member));
+    async zscore(key: string, member: unknown): Promise<null | number> {
+        const score = await (this.client as Redis).zscore(this.buildKey(key), safeToStringValue(member));
+
+        return score ? safeParseNumber(score) : null;
     }
 
     // ========== PUB/SUB OPERATIONS WITH LODASH ==========
-
-    async publishJson(channel: string, data: unknown): Promise<number> {
-        try {
-            const payload = JSON.stringify(data);
-            return (this.client as Redis).publish(this.buildKey(channel), payload);
-        } catch {
-            throw new Error(`Failed to stringify data for channel ${channel}`);
-        }
-    }
 
     async publish(channel: string, message: string): Promise<number> {
         if (!isString(message)) {
             throw new Error('Message must be a string');
         }
+
         return (this.client as Redis).publish(this.buildKey(channel), message);
     }
 
@@ -1300,6 +1380,7 @@ export class RedisFacade {
         forEach(validMessages, ({ channel, data }) => {
             try {
                 const payload = JSON.stringify(data);
+
                 pipeline.publish(this.buildKey(channel), payload);
             } catch {
                 // skip invalid message
@@ -1307,7 +1388,18 @@ export class RedisFacade {
         });
 
         const results = await pipeline.exec();
+
         return map(results, ([, result]) => safeParseInteger(result, 0));
+    }
+
+    async publishJson(channel: string, data: unknown): Promise<number> {
+        try {
+            const payload = JSON.stringify(data);
+
+            return (this.client as Redis).publish(this.buildKey(channel), payload);
+        } catch {
+            throw new Error(`Failed to stringify data for channel ${channel}`);
+        }
     }
 
     // ========== ADVANCED LOCKING WITH LODASH ==========
@@ -1333,25 +1425,26 @@ export class RedisFacade {
                             return 0 
                         end
                     `;
+
                     try {
                         const result = await (this.client as Redis).eval(script, 1, prefixedKey, token);
-                        const released = result === 1;
-                        return released;
-                    } catch (error) {
+
+                        return result === 1;
+                    } catch {
                         return false;
                     }
                 };
 
                 return {
                     ok: true,
-                    token,
                     release,
+                    token,
                     ttl: safeTtl,
                 };
             } catch (error) {
                 return {
-                    ok: false,
                     error: get(error, 'message', 'Unknown error'),
+                    ok: false,
                 };
             }
         }, 'acquire_lock');
@@ -1368,15 +1461,34 @@ export class RedisFacade {
 
         for (let i = 0; i <= safeMaxRetries; i++) {
             const result = await this.acquireLock(key, ttlMs);
+
             if (result.ok) return result;
 
             if (i < safeMaxRetries) {
                 const backoffDelay = safeRetryDelay * Math.pow(2, i);
+
                 await new Promise((resolve) => setTimeout(resolve, backoffDelay));
             }
         }
 
-        return { ok: false, error: 'Failed to acquire lock after retries' };
+        return { error: 'Failed to acquire lock after retries', ok: false };
+    }
+
+    async extendLock(key: string, token: string, additionalTtlMs: number): Promise<boolean> {
+        const safeAdditionalTtl = safeParseInteger(additionalTtlMs, 30000);
+        const prefixedKey = this.buildKey(`lock:${key}`);
+
+        const script = `
+            if redis.call('get', KEYS[1]) == ARGV[1] then 
+                return redis.call('pexpire', KEYS[1], ARGV[2]) 
+            else 
+                return 0 
+            end
+        `;
+
+        const result = await (this.client as Redis).eval(script, 1, prefixedKey, token, safeAdditionalTtl);
+
+        return result === 1;
     }
 
     async withLock<T>(
@@ -1404,22 +1516,6 @@ export class RedisFacade {
                 await lock.release();
             }
         }
-    }
-
-    async extendLock(key: string, token: string, additionalTtlMs: number): Promise<boolean> {
-        const safeAdditionalTtl = safeParseInteger(additionalTtlMs, 30000);
-        const prefixedKey = this.buildKey(`lock:${key}`);
-
-        const script = `
-            if redis.call('get', KEYS[1]) == ARGV[1] then 
-                return redis.call('pexpire', KEYS[1], ARGV[2]) 
-            else 
-                return 0 
-            end
-        `;
-
-        const result = await (this.client as Redis).eval(script, 1, prefixedKey, token, safeAdditionalTtl);
-        return result === 1;
     }
 
     // ========== RATE LIMITING WITH LODASH ==========
@@ -1451,6 +1547,16 @@ export class RedisFacade {
                 retryAfter: safeWindow,
             };
         }
+    }
+
+    async rateLimitMultiple(
+        requests: Array<{ key: string; limit: number; windowMs: number }>,
+    ): Promise<RateLimitResult[]> {
+        if (!isArray(requests) || isEmpty(requests)) return [];
+
+        const validRequests = filter(requests, (req) => isPlainObject(req) && validateKey(get(req, 'key')));
+
+        return Promise.all(map(validRequests, ({ key, limit, windowMs }) => this.rateLimit(key, limit, windowMs)));
     }
 
     async slidingWindowRateLimit(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
@@ -1496,16 +1602,6 @@ export class RedisFacade {
         }
     }
 
-    async rateLimitMultiple(
-        requests: Array<{ key: string; limit: number; windowMs: number }>,
-    ): Promise<RateLimitResult[]> {
-        if (!isArray(requests) || isEmpty(requests)) return [];
-
-        const validRequests = filter(requests, (req) => isPlainObject(req) && validateKey(get(req, 'key')));
-
-        return Promise.all(map(validRequests, ({ key, limit, windowMs }) => this.rateLimit(key, limit, windowMs)));
-    }
-
     // ========== STATISTICS & MONITORING WITH LODASH ==========
 
     async getCacheStats(): Promise<CacheStats & { connectionHealth: ConnectionHealth }> {
@@ -1517,52 +1613,33 @@ export class RedisFacade {
 
             const total = this.stats.hits + this.stats.misses;
 
-            const stats = {
-                totalKeys: keyCount.length,
-                memoryUsage,
-                hitRate: total > 0 ? Number(((this.stats.hits / total) * 100).toFixed(2)) : 0,
-                missRate: total > 0 ? Number(((this.stats.misses / total) * 100).toFixed(2)) : 0,
-                totalRequests: total,
+            return {
                 connectionHealth: cloneDeep(this.connectionHealth),
+                hitRate: total > 0 ? Number(((this.stats.hits / total) * 100).toFixed(2)) : 0,
+                memoryUsage,
+                missRate: total > 0 ? Number(((this.stats.misses / total) * 100).toFixed(2)) : 0,
+                totalKeys: keyCount.length,
+                totalRequests: total,
             };
-
-            return stats;
         } catch {
             return {
-                totalKeys: 0,
-                memoryUsage: 'Error',
-                hitRate: 0,
-                missRate: 0,
-                totalRequests: 0,
                 connectionHealth: cloneDeep(this.connectionHealth),
+                hitRate: 0,
+                memoryUsage: 'Error',
+                missRate: 0,
+                totalKeys: 0,
+                totalRequests: 0,
             };
         }
     }
 
-    getLocalStats() {
-        const total = this.stats.operations;
-        return {
-            hits: this.stats.hits,
-            misses: this.stats.misses,
-            errors: this.stats.errors,
-            operations: total,
-            hitRate: total > 0 ? Number(((this.stats.hits / total) * 100).toFixed(2)) : 0,
-            errorRate: total > 0 ? Number(((this.stats.errors / total) * 100).toFixed(2)) : 0,
-        };
-    }
-
-    resetStats(): void {
-        this.stats.hits = 0;
-        this.stats.misses = 0;
-        this.stats.errors = 0;
-        this.stats.operations = 0;
-    }
-
-    async getKeyStats(pattern = '*'): Promise<Array<{ key: string; type: string; ttl: number; size?: number }>> {
+    async getKeyStats(pattern = '*'): Promise<Array<{ key: string; size?: number; ttl: number; type: string }>> {
         const keys = await this.scanKeys(pattern);
+
         if (isEmpty(keys)) return [];
 
         const pipeline = (this.client as Redis).pipeline();
+
         forEach(keys, (key) => {
             pipeline.type(key);
             pipeline.ttl(key);
@@ -1577,21 +1654,47 @@ export class RedisFacade {
                 const ttlResult = get(results, [index * 2 + 1, 1]);
 
                 acc.push({
-                    key,
                     type: toString(typeResult),
+                    key,
                     ttl: safeParseInteger(ttlResult, -1),
                 });
 
                 return acc;
             },
-            [] as Array<{ key: string; type: string; ttl: number }>,
+            [] as Array<{ key: string; ttl: number; type: string }>,
         );
+    }
+
+    getLocalStats() {
+        const total = this.stats.operations;
+
+        return {
+            errorRate: total > 0 ? Number(((this.stats.errors / total) * 100).toFixed(2)) : 0,
+            errors: this.stats.errors,
+            hitRate: total > 0 ? Number(((this.stats.hits / total) * 100).toFixed(2)) : 0,
+            hits: this.stats.hits,
+            misses: this.stats.misses,
+            operations: total,
+        };
+    }
+
+    resetStats(): void {
+        this.stats.hits = 0;
+        this.stats.misses = 0;
+        this.stats.errors = 0;
+        this.stats.operations = 0;
     }
 
     // ========== UTILITY FUNCTIONS WITH LODASH ==========
 
-    async ping(): Promise<string> {
-        return (this.client as Redis).ping();
+    async dbsize(): Promise<number> {
+        return (this.client as Redis).dbsize();
+    }
+
+    async eval(script: string, numKeys: number, ...args: Array<number | string>): Promise<unknown> {
+        const safeNumKeys = safeParseInteger(numKeys, 0);
+
+        return (this.client as Redis).eval(script, safeNumKeys, ...args);
     }
 
     async flushdb(): Promise<'OK'> {
@@ -1604,17 +1707,12 @@ export class RedisFacade {
             : (this.client as Redis).info();
     }
 
-    async dbsize(): Promise<number> {
-        return (this.client as Redis).dbsize();
-    }
-
-    async eval(script: string, numKeys: number, ...args: Array<string | number>): Promise<unknown> {
-        const safeNumKeys = safeParseInteger(numKeys, 0);
-        return (this.client as Redis).eval(script, safeNumKeys, ...args);
-    }
-
     multi() {
         return (this.client as Redis).multi();
+    }
+
+    async ping(): Promise<string> {
+        return (this.client as Redis).ping();
     }
 
     pipeline() {
@@ -1623,19 +1721,14 @@ export class RedisFacade {
 
     // ========== SERIALIZATION HELPERS WITH LODASH ==========
 
-    async setCompressed(key: string, value: unknown, options?: RedisSetOptions): Promise<string | null> {
-        // For demonstration - in real implementation you'd use compression
-        const clonedValue = cloneDeep(value);
-        return this.setJson(key, clonedValue, options);
-    }
-
-    async getDecompressed<T = unknown>(key: string): Promise<T | null> {
+    async getDecompressed<T = unknown>(key: string): Promise<null | T> {
         // For demonstration - in real implementation you'd use decompression
         const result = await this.getJson<T>(key);
+
         return result ? cloneDeep(result) : null;
     }
 
-    async setBulkJson(items: Array<{ key: string; value: unknown; options?: RedisSetOptions }>): Promise<void> {
+    async setBulkJson(items: Array<{ key: string; options?: RedisSetOptions; value: unknown }>): Promise<void> {
         const validItems = filter(items, (item) => isPlainObject(item) && validateKey(get(item, 'key')));
 
         if (isEmpty(validItems)) return;
@@ -1644,13 +1737,20 @@ export class RedisFacade {
 
         for (const itemChunk of chunks) {
             await this.mset(
-                map(itemChunk, ({ key, value, options }) => ({
+                map(itemChunk, ({ key, options, value }) => ({
                     key,
-                    value,
                     options,
+                    value,
                 })),
             );
         }
+    }
+
+    async setCompressed(key: string, value: unknown, options?: RedisSetOptions): Promise<null | string> {
+        // For demonstration - in real implementation you'd use compression
+        const clonedValue = cloneDeep(value);
+
+        return this.setJson(key, clonedValue, options);
     }
 
     // ========== PATTERN MATCHING WITH LODASH ==========
@@ -1659,45 +1759,26 @@ export class RedisFacade {
         return this.scanKeys(pattern);
     }
 
-    async deleteKeysByPattern(pattern: string): Promise<number> {
-        return this.del(pattern);
-    }
-
     async getKeysByPrefix(prefix: string): Promise<string[]> {
         if (!isString(prefix) || isEmpty(prefix)) return [];
+
         return this.scanKeys(`${prefix}*`);
-    }
-
-    async groupKeysByPattern(patterns: string[]): Promise<Record<string, string[]>> {
-        if (!isArray(patterns) || isEmpty(patterns)) return {};
-
-        const results = await Promise.all(
-            map(patterns, async (pattern) => ({
-                pattern,
-                keys: await this.scanKeys(pattern),
-            })),
-        );
-
-        const dict = keyBy(results, 'pattern');
-        const out: Record<string, string[]> = {};
-        forEach(dict, (v, k) => {
-            out[k] = v.keys;
-        });
-        return out;
     }
 
     async getKeysWithMetadata(pattern = '*'): Promise<
         Array<{
             key: string;
-            type: string;
-            ttl: number;
             size: number;
+            ttl: number;
+            type: string;
         }>
     > {
         const keys = await this.scanKeys(pattern);
+
         if (isEmpty(keys)) return [];
 
         const pipeline = (this.client as Redis).pipeline();
+
         forEach(keys, (key) => {
             pipeline.type(key);
             pipeline.ttl(key);
@@ -1715,19 +1796,110 @@ export class RedisFacade {
                 const sizeResult = get(results, [baseIndex + 2, 1]);
 
                 acc.push({
-                    key,
                     type: toString(typeResult),
-                    ttl: safeParseInteger(ttlResult, -1),
+                    key,
                     size: safeParseInteger(sizeResult, 0),
+                    ttl: safeParseInteger(ttlResult, -1),
                 });
 
                 return acc;
             },
-            [] as Array<{ key: string; type: string; ttl: number; size: number }>,
+            [] as Array<{ key: string; size: number; ttl: number; type: string }>,
         );
     }
 
+    async deleteKeysByPattern(pattern: string): Promise<number> {
+        return this.del(pattern);
+    }
+
+    async groupKeysByPattern(patterns: string[]): Promise<Record<string, string[]>> {
+        if (!isArray(patterns) || isEmpty(patterns)) return {};
+
+        const results = await Promise.all(
+            map(patterns, async (pattern) => ({
+                keys: await this.scanKeys(pattern),
+                pattern,
+            })),
+        );
+
+        const dict = keyBy(results, 'pattern');
+        const out: Record<string, string[]> = {};
+
+        forEach(dict, (v, k) => {
+            set(out, k, v.keys);
+        });
+
+        return out;
+    }
+
     // ========== HEALTH CHECK WITH LODASH ==========
+
+    async deepHealthCheck(): Promise<{
+        checks: Record<string, { error?: string; latency: number; ok: boolean }>;
+        circuitBreakerStatus: {
+            failures: number;
+            isOpen: boolean;
+            nextAttempt?: string;
+        };
+        connectionHealth: ConnectionHealth;
+        overallLatency: number;
+        status: 'healthy' | 'unhealthy';
+    }> {
+        const start = Date.now();
+        const checks: Record<string, { error?: string; latency: number; ok: boolean }> = {};
+
+        // Ping check
+        await this.performHealthCheck('ping', checks, async () => {
+            await (this.client as Redis).ping();
+        });
+
+        // Set/Get check
+        await this.performHealthCheck('setGet', checks, async () => {
+            const testKey = `health_check_${Date.now()}`;
+            const testValue = { test: true, timestamp: Date.now() };
+
+            await this.setJson(testKey, testValue, { ttlSeconds: 10 });
+            const retrieved = await this.getJson(testKey);
+
+            await this.del(testKey);
+
+            if (isNil(retrieved)) {
+                throw new Error('Set/Get test failed - value not retrieved');
+            }
+        });
+
+        // Info check
+        await this.performHealthCheck('info', checks, async () => {
+            await this.info('server');
+        });
+
+        // Memory usage check
+        await this.performHealthCheck('memory', checks, async () => {
+            const info = await this.info('memory');
+
+            if (!info.includes('used_memory')) {
+                throw new Error('Memory info not available');
+            }
+        });
+
+        const allHealthy = every(checks, 'ok');
+        const overallLatency = Date.now() - start;
+
+        return {
+            status: allHealthy ? ('healthy' as const) : ('unhealthy' as const),
+            checks,
+            circuitBreakerStatus: {
+                failures: this.circuitBreaker.failures,
+                isOpen: this.circuitBreaker.failures >= this.circuitBreaker.threshold,
+                nextAttempt:
+                    this.circuitBreaker.nextAttempt > Date.now()
+                        ? new Date(this.circuitBreaker.nextAttempt).toISOString()
+                        : undefined,
+            },
+            connectionHealth: cloneDeep(this.connectionHealth),
+            overallLatency,
+        };
+    }
 
     async healthCheck(): Promise<HealthCheckResult> {
         const start = Date.now();
@@ -1744,102 +1916,35 @@ export class RedisFacade {
             };
         } catch (error) {
             const latency = Date.now() - start;
-            const healthResult = {
+
+            return {
                 status: 'unhealthy' as const,
-                latency,
                 error: get(error, 'message', 'Unknown error'),
+                latency,
                 timestamp: Date.now(),
             };
-
-            return healthResult;
         }
-    }
-
-    async deepHealthCheck(): Promise<{
-        status: 'healthy' | 'unhealthy';
-        checks: Record<string, { ok: boolean; latency: number; error?: string }>;
-        overallLatency: number;
-        connectionHealth: ConnectionHealth;
-        circuitBreakerStatus: {
-            failures: number;
-            isOpen: boolean;
-            nextAttempt?: string;
-        };
-    }> {
-        const start = Date.now();
-        const checks: Record<string, { ok: boolean; latency: number; error?: string }> = {};
-
-        // Ping check
-        await this.performHealthCheck('ping', checks, async () => {
-            await (this.client as Redis).ping();
-        });
-
-        // Set/Get check
-        await this.performHealthCheck('setGet', checks, async () => {
-            const testKey = `health_check_${Date.now()}`;
-            const testValue = { timestamp: Date.now(), test: true };
-
-            await this.setJson(testKey, testValue, { ttlSeconds: 10 });
-            const retrieved = await this.getJson(testKey);
-            await this.del(testKey);
-
-            if (isNil(retrieved)) {
-                throw new Error('Set/Get test failed - value not retrieved');
-            }
-        });
-
-        // Info check
-        await this.performHealthCheck('info', checks, async () => {
-            await this.info('server');
-        });
-
-        // Memory usage check
-        await this.performHealthCheck('memory', checks, async () => {
-            const info = await this.info('memory');
-            if (!info.includes('used_memory')) {
-                throw new Error('Memory info not available');
-            }
-        });
-
-        const allHealthy = every(checks, 'ok');
-        const overallLatency = Date.now() - start;
-
-        const result = {
-            status: allHealthy ? ('healthy' as const) : ('unhealthy' as const),
-            checks,
-            overallLatency,
-            connectionHealth: cloneDeep(this.connectionHealth),
-            circuitBreakerStatus: {
-                failures: this.circuitBreaker.failures,
-                isOpen: this.circuitBreaker.failures >= this.circuitBreaker.threshold,
-                nextAttempt:
-                    this.circuitBreaker.nextAttempt > Date.now()
-                        ? new Date(this.circuitBreaker.nextAttempt).toISOString()
-                        : undefined,
-            },
-        };
-
-        return result;
     }
 
     private async performHealthCheck(
         checkName: string,
-        checks: Record<string, { ok: boolean; latency: number; error?: string }>,
+        checks: Record<string, { error?: string; latency: number; ok: boolean }>,
         operation: () => Promise<void>,
     ): Promise<void> {
         const checkStart = Date.now();
+
         try {
             await operation();
-            checks[checkName] = {
+            set(checks, checkName, {
+                latency: Date.now() - checkStart,
                 ok: true,
-                latency: Date.now() - checkStart,
-            };
+            });
         } catch (error) {
-            checks[checkName] = {
-                ok: false,
-                latency: Date.now() - checkStart,
+            set(checks, checkName, {
                 error: get(error, 'message', 'Unknown error'),
-            };
+                latency: Date.now() - checkStart,
+                ok: false,
+            });
         }
     }
 
@@ -1848,7 +1953,7 @@ export class RedisFacade {
     async cacheAside<T>(
         key: string,
         loader: () => Promise<T>,
-        options: { ttlSeconds: number; refreshThreshold?: number },
+        options: { refreshThreshold?: number; ttlSeconds: number },
     ): Promise<T> {
         const cached = await this.getJson<{ data: T; timestamp: number }>(key);
 
@@ -1873,6 +1978,7 @@ export class RedisFacade {
         }
 
         const fresh = await loader();
+
         await this.setJson(
             key,
             {
@@ -1885,15 +1991,6 @@ export class RedisFacade {
         return fresh;
     }
 
-    async writeThrough<T>(
-        key: string,
-        value: T,
-        writer: (value: T) => Promise<void>,
-        options?: RedisSetOptions,
-    ): Promise<void> {
-        await Promise.all([this.setJson(key, value, options), writer(value)]);
-    }
-
     async writeBehind<T>(
         key: string,
         value: T,
@@ -1904,30 +2001,40 @@ export class RedisFacade {
 
         // Queue for background writing
         const writeKey = this.buildKey(`write_queue:${key}`);
-        await this.lpush(writeKey, { value, timestamp: Date.now() });
+
+        await this.lpush(writeKey, { timestamp: Date.now(), value });
 
         // Fire and forget the actual write
         // eslint-disable-next-line no-console
         writer(value).catch(console.error);
     }
 
-    // ========== CONNECTION MANAGEMENT ==========
-
-    getConnectionHealth(): ConnectionHealth {
-        return cloneDeep(this.connectionHealth);
+    async writeThrough<T>(
+        key: string,
+        value: T,
+        writer: (value: T) => Promise<void>,
+        options?: RedisSetOptions,
+    ): Promise<void> {
+        await Promise.all([this.setJson(key, value, options), writer(value)]);
     }
+
+    // ========== CONNECTION MANAGEMENT ==========
 
     getCircuitBreakerStatus() {
         return {
             failures: this.circuitBreaker.failures,
-            threshold: this.circuitBreaker.threshold,
             isOpen: this.circuitBreaker.failures >= this.circuitBreaker.threshold,
             nextAttempt:
                 this.circuitBreaker.nextAttempt > Date.now()
                     ? new Date(this.circuitBreaker.nextAttempt).toISOString()
                     : undefined,
+            threshold: this.circuitBreaker.threshold,
             timeout: this.circuitBreaker.timeout,
         };
+    }
+
+    getConnectionHealth(): ConnectionHealth {
+        return cloneDeep(this.connectionHealth);
     }
 
     resetCircuitBreaker(): void {

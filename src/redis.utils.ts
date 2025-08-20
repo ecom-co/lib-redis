@@ -1,6 +1,8 @@
 import IORedis, { Cluster, type RedisOptions } from 'ioredis';
+import forEach from 'lodash/forEach';
+import set from 'lodash/set';
 
-import type { RedisClientOptions, RedisClient, ClusterClientOptions } from './redis.interfaces';
+import type { ClusterClientOptions, RedisClient, RedisClientOptions } from './redis.interfaces';
 
 const toClusterNodes = (nodes: ClusterClientOptions['nodes']): ClusterClientOptions['nodes'] => nodes.map((n) => n);
 
@@ -8,25 +10,29 @@ export const createRedisClient = (options: RedisClientOptions): RedisClient => {
     if (options.type === 'cluster') {
         const { nodes, ...clusterOptions } = options;
         const normalizedNodes = toClusterNodes(nodes);
+
         return new Cluster(normalizedNodes, clusterOptions);
     }
 
     if (options.type === 'sentinel') {
-        const { sentinels, sentinelName, sentinelUsername, sentinelPassword, ...rest } = options;
+        const { sentinelName, sentinelPassword, sentinels, sentinelUsername, ...rest } = options;
         const config: RedisOptions = {
             ...rest,
-            sentinels,
             name: sentinelName,
-            sentinelUsername,
             sentinelPassword,
+            sentinels,
+            sentinelUsername,
         };
+
         return new IORedis(config);
     }
 
     const single = options;
+
     if (single.connectionString) {
         return new IORedis(single.connectionString, single);
     }
+
     return new IORedis(single);
 };
 
@@ -38,9 +44,11 @@ export const createRedisClient = (options: RedisClientOptions): RedisClient => {
  *   // InjectRedis(RedisNames.FORWARD)
  */
 export const defineRedisNames = <const T extends readonly string[]>(names: T): { [K in T[number]]: K } => {
-    const map = Object.create(null) as { [K in T[number]]: K };
-    for (const n of names) {
-        (map as Record<string, string>)[n] = n as unknown as typeof n;
-    }
-    return map;
+    const result = {} as { [K in T[number]]: K };
+
+    forEach(names, (name) => {
+        set(result, name, name);
+    });
+
+    return result;
 };

@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, type LoggerService } from '@nestjs/common';
+import { Injectable, Logger, type LoggerService, OnModuleDestroy } from '@nestjs/common';
 
 import compact from 'lodash/compact';
 import forEach from 'lodash/forEach';
@@ -13,47 +13,14 @@ import trim from 'lodash/trim';
 
 import { REDIS_DEFAULT_CLIENT_NAME } from './redis.constants';
 import { RedisFacade } from './redis.facade';
-import type { RedisClient, RedisModuleOptions } from './redis.interfaces';
 import { createRedisClient } from './redis.utils';
+
+import type { RedisClient, RedisModuleOptions } from './redis.interfaces';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
-    private readonly nameToClient = new Map<string, RedisClient>();
     private logger: LoggerService = new Logger(RedisService.name);
-
-    configure(options: RedisModuleOptions): void {
-        if (!isObject(options)) {
-            throw new Error('RedisModuleOptions must be a valid object');
-        }
-
-        if (options.logger && isObject(options.logger)) {
-            this.logger = options.logger;
-        }
-
-        const clients = get(options, 'clients', []);
-        if (!isArray(clients)) {
-            throw new Error('RedisModuleOptions.clients must be an array');
-        }
-
-        forEach(clients, (def) => {
-            if (!isObject(def)) {
-                this.logger.warn?.('Skipping invalid client definition - not an object');
-                return;
-            }
-
-            const rawName = get(def, 'name', REDIS_DEFAULT_CLIENT_NAME);
-            const name = toLower(trim(isString(rawName) ? rawName : REDIS_DEFAULT_CLIENT_NAME));
-
-            try {
-                const client = createRedisClient(def);
-                this.nameToClient.set(name, client);
-                this.attachLogs(name, client);
-            } catch (error) {
-                this.logger.error?.(`Failed to create Redis client '${name}':`, get(error, 'stack', error));
-                throw error;
-            }
-        });
-    }
+    private readonly nameToClient = new Map<string, RedisClient>();
 
     get(name = REDIS_DEFAULT_CLIENT_NAME): RedisClient {
         if (!isString(name)) {
@@ -65,22 +32,61 @@ export class RedisService implements OnModuleDestroy {
 
         if (!client) {
             const availableClients = Array.from(this.nameToClient.keys());
+
             throw new Error(`Redis client not found: ${name}. Available clients: [${availableClients.join(', ')}]`);
         }
 
         return client;
     }
 
+    configure(options: RedisModuleOptions): void {
+        if (!isObject(options)) {
+            throw new Error('RedisModuleOptions must be a valid object');
+        }
+
+        if (options.logger && isObject(options.logger)) {
+            this.logger = options.logger;
+        }
+
+        const clients = get(options, 'clients', []);
+
+        if (!isArray(clients)) {
+            throw new Error('RedisModuleOptions.clients must be an array');
+        }
+
+        forEach(clients, (def) => {
+            if (!isObject(def)) {
+                this.logger.warn?.('Skipping invalid client definition - not an object');
+
+                return;
+            }
+
+            const rawName = get(def, 'name', REDIS_DEFAULT_CLIENT_NAME);
+            const name = toLower(trim(isString(rawName) ? rawName : REDIS_DEFAULT_CLIENT_NAME));
+
+            try {
+                const client = createRedisClient(def);
+
+                this.nameToClient.set(name, client);
+                this.attachLogs(name, client);
+            } catch (error) {
+                this.logger.error?.(`Failed to create Redis client '${name}':`, get(error, 'stack', error));
+                throw error;
+            }
+        });
+    }
+
     private attachLogs(name: string, client: RedisClient): void {
         if (!isString(name) || !isObject(client)) {
             this.logger.warn?.('Invalid parameters for attachLogs');
+
             return;
         }
 
         const label = `redis:${name}`;
 
         type RedisLikeOn = {
-            (event: 'connect' | 'ready' | 'end', listener: () => void): void;
+            (event: 'connect' | 'end' | 'ready', listener: () => void): void;
             (event: 'reconnecting', listener: (time: number) => void): void;
             (event: 'error', listener: (err: unknown) => void): void;
         };
@@ -90,6 +96,7 @@ export class RedisService implements OnModuleDestroy {
 
         if (!isFunction(get(emitter, 'on'))) {
             this.logger.warn?.(`Redis client '${name}' does not support event listeners`);
+
             return;
         }
 
@@ -104,6 +111,7 @@ export class RedisService implements OnModuleDestroy {
 
             emitter.on('reconnecting', (time: number) => {
                 const timeStr = isFinite(time) ? `${time}ms` : 'unknown time';
+
                 this.logger?.warn?.(`${label} reconnecting in ${timeStr}`);
             });
 
@@ -113,6 +121,7 @@ export class RedisService implements OnModuleDestroy {
 
             emitter.on('error', (err: unknown) => {
                 const errorStack = get(err, 'stack', get(err, 'message', 'Unknown error'));
+
                 this.logger?.error?.(`${label} error`, errorStack);
             });
         } catch (error) {
@@ -124,14 +133,6 @@ export class RedisService implements OnModuleDestroy {
     }
 
     // Ergonomic wrapper with helpers (JSON, prefix, caching, locks, ...)
-    use(name = REDIS_DEFAULT_CLIENT_NAME, prefix = ''): RedisFacade {
-        const normalizedName = isString(name) ? name : REDIS_DEFAULT_CLIENT_NAME;
-        const normalizedPrefix = isString(prefix) ? prefix : '';
-
-        const client = this.get(normalizedName);
-        return new RedisFacade(client, normalizedPrefix);
-    }
-
     async onModuleDestroy(): Promise<void> {
         const clientEntries = Array.from(this.nameToClient.entries());
 
@@ -149,13 +150,16 @@ export class RedisService implements OnModuleDestroy {
                             );
                         });
                     }
+
                     this.logger?.warn?.(`Redis client '${clientName}' does not support quit() method`);
+
                     return null;
                 } catch (error) {
                     this.logger?.warn?.(
                         `Error during Redis client '${clientName}' shutdown:`,
                         get(error, 'message', error),
                     );
+
                     return null;
                 }
             }),
@@ -172,5 +176,14 @@ export class RedisService implements OnModuleDestroy {
         this.nameToClient.clear();
 
         this.logger?.log?.('All Redis clients have been closed');
+    }
+
+    use(name = REDIS_DEFAULT_CLIENT_NAME, prefix = ''): RedisFacade {
+        const normalizedName = isString(name) ? name : REDIS_DEFAULT_CLIENT_NAME;
+        const normalizedPrefix = isString(prefix) ? prefix : '';
+
+        const client = this.get(normalizedName);
+
+        return new RedisFacade(client, normalizedPrefix);
     }
 }
