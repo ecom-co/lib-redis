@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LoggerService, ModuleMetadata } from '@nestjs/common';
 
 import type { Cluster, ClusterNode, ClusterOptions, Redis, RedisOptions } from 'ioredis';
@@ -13,11 +14,10 @@ export type RedisClient = Cluster | Redis;
 
 export type RedisClientOptions = ClusterClientOptions | SentinelClientOptions | SingleClientOptions;
 
-export interface RedisModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
-    inject?: ((new (...args: unknown[]) => unknown) | string | symbol)[];
-    useFactory: (
-        ...args: ((new (...args: unknown[]) => unknown) | string | symbol)[]
-    ) => Promise<RedisModuleOptions> | RedisModuleOptions;
+export interface RedisModuleAsyncOptions<TArgs extends readonly any[] = readonly any[]>
+    extends Pick<ModuleMetadata, 'imports'> {
+    inject?: ((new (...args: any[]) => unknown) | string | symbol)[];
+    useFactory: (...args: TArgs) => Promise<RedisModuleOptions> | RedisModuleOptions;
     /**
      * Optional list of client names to predeclare DI tokens for when using forRootAsync.
      * This allows injecting `@InjectRedis(name)` even with async configuration.
