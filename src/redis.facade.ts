@@ -140,6 +140,11 @@ const DEFAULT_CONFIG: RedisFacadeConfig = {
 };
 
 // ========== UTILITY FUNCTIONS ==========
+/**
+ * Safely convert any value to string representation.
+ * @param {unknown} value - Value to convert to string
+ * @returns {string} String representation of the value
+ */
 const safeToStringValue = (value: unknown): string => {
     try {
         if (isNil(value)) return 'null';
@@ -159,6 +164,12 @@ const safeToStringValue = (value: unknown): string => {
     }
 };
 
+/**
+ * Safely parse JSON string or return value as-is if not JSON.
+ * @template T - Expected return type
+ * @param {string | null} raw - Raw string value to parse
+ * @returns {T | null} Parsed JSON value or original string, null if input is null/empty
+ */
 const safeTryParseJson = <T>(raw: null | string): null | T => {
     if (isNil(raw) || isEmpty(trim(raw))) return null;
 
@@ -176,6 +187,12 @@ const safeTryParseJson = <T>(raw: null | string): null | T => {
     }
 };
 
+/**
+ * Safely parse a number from unknown value with fallback.
+ * @param {unknown} value - Value to parse as number
+ * @param {number} [defaultValue=0] - Default value if parsing fails
+ * @returns {number} Parsed number or default value
+ */
 const safeParseNumber = (value: unknown, defaultValue = 0): number => {
     if (isNumber(value) && isFinite(value)) return value;
 
@@ -188,14 +205,28 @@ const safeParseNumber = (value: unknown, defaultValue = 0): number => {
     return defaultValue;
 };
 
+/**
+ * Safely parse an integer from unknown value with fallback.
+ * @param {unknown} value - Value to parse as integer
+ * @param {number} [defaultValue=0] - Default value if parsing fails
+ * @returns {number} Parsed integer or default value
+ */
 const safeParseInteger = (value: unknown, defaultValue = 0): number => {
     const num = safeParseNumber(value, defaultValue);
 
     return toSafeInteger(num);
 };
 
+/**
+ * Validate that a key is a non-empty string.
+ * @param {string} key - Key to validate
+ * @returns {boolean} True if key is valid
+ */
 const validateKey = (key: string): boolean => isString(key) && !isEmpty(trim(key));
 
+/**
+ * High-level Redis facade with advanced features like JSON handling, batching, locks, rate limiting, and health monitoring.
+ */
 export class RedisFacade {
     private readonly circuitBreaker: CircuitBreaker;
     private cleanup?: () => void;
@@ -220,6 +251,16 @@ export class RedisFacade {
         operations: 0,
     };
 
+    /**
+     * Create a new RedisFacade instance.
+     * @param {RedisClient} client - Redis client instance
+     * @param {string} [keyPrefix=''] - Optional prefix for all keys
+     * @param {Partial<RedisFacadeConfig>} [config={}] - Optional configuration overrides
+     * @param {Logger} [logger] - Optional logger instance
+     * @throws {Error} If client is null or keyPrefix is not a string
+     * @example
+     * const facade = new RedisFacade(redisClient, 'app:', { maxRetries: 5 });
+     */
     constructor(
         private readonly client: RedisClient,
         private readonly keyPrefix = '',
@@ -250,6 +291,10 @@ export class RedisFacade {
     }
 
     // ========== SETUP & CLEANUP METHODS ==========
+    /**
+     * Set up Redis client connection event handlers.
+     * @returns {void}
+     */
     private setupConnectionHandlers(): void {
         if (this.isRedisClient(this.client)) {
             this.client.on?.('error', (error: Error) => {
@@ -270,6 +315,10 @@ export class RedisFacade {
         }
     }
 
+    /**
+     * Set up debounced stats persistence mechanism.
+     * @returns {void}
+     */
     private setupDebouncedStats(): void {
         this.debouncedSaveStats = debounce(() => {
             void this.persistStats();
@@ -280,17 +329,32 @@ export class RedisFacade {
         };
     }
 
+    /**
+     * Clean up resources and cancel pending operations.
+     * @returns {void}
+     */
     dispose(): void {
         this.cleanup?.();
     }
 
     // ========== UTILITY METHODS ==========
+    /**
+     * Type guard to check if client is a Redis instance.
+     * @param {RedisClient} client - Redis client to check
+     * @returns {client is Redis} True if client is a Redis instance
+     */
     private isRedisClient(client: RedisClient): client is Redis {
         return client && typeof client === 'object' && 'set' in client && typeof client.set === 'function';
     }
 
     // log method removed
 
+    /**
+     * Build the final Redis key with prefix if configured.
+     * @param {string} key - Base key name
+     * @returns {string} Final Redis key with prefix
+     * @throws {Error} If key is invalid
+     */
     private buildKey(key: string): string {
         if (!validateKey(key)) {
             throw new Error(`Invalid key: ${key}`);
@@ -299,6 +363,13 @@ export class RedisFacade {
         return isEmpty(this.keyPrefix) ? key : `${this.keyPrefix}:${key}`;
     }
 
+    /**
+     * Create an enhanced error with context and original error details.
+     * @param {string} message - Error message
+     * @param {unknown} originalError - Original error that occurred
+     * @param {Record<string, unknown>} [context] - Additional context information
+     * @returns {Error} Enhanced error with additional context
+     */
     private createEnhancedError(message: string, originalError: unknown, context?: Record<string, unknown>): Error {
         const errorMessage = `${message}: ${get(originalError, 'message', 'Unknown error')}`;
         const enhancedError = new Error(errorMessage);
@@ -316,6 +387,14 @@ export class RedisFacade {
         return enhancedError;
     }
 
+    /**
+     * Create a new RedisFacade instance with additional key prefix.
+     * @param {string} prefix - Additional prefix to append
+     * @returns {RedisFacade} New RedisFacade instance with combined prefix
+     * @throws {Error} If prefix is not a non-empty string
+     * @example
+     * const userCache = cache.withPrefix('user');
+     */
     withPrefix(prefix: string): RedisFacade {
         if (!isString(prefix) || isEmpty(trim(prefix))) {
             throw new Error('Prefix must be a non-empty string');
@@ -326,6 +405,10 @@ export class RedisFacade {
         return new RedisFacade(this.client, nextPrefix, this.config, this.logger);
     }
 
+    /**
+     * Persist current stats to Redis.
+     * @returns {Promise<void>} Promise that resolves when stats are persisted
+     */
     private async persistStats(): Promise<void> {
         try {
             const statsKey = this.buildKey('__facade_stats__');
@@ -343,24 +426,44 @@ export class RedisFacade {
         }
     }
 
+    /**
+     * Record an error operation in stats.
+     * @returns {void}
+     */
     private recordError(): void {
         this.stats.errors++;
         this.stats.operations++;
         this.debouncedSaveStats();
     }
 
+    /**
+     * Record a cache hit in stats.
+     * @returns {void}
+     */
     private recordHit(): void {
         this.stats.hits++;
         this.stats.operations++;
         this.debouncedSaveStats();
     }
 
+    /**
+     * Record a cache miss in stats.
+     * @returns {void}
+     */
     private recordMiss(): void {
         this.stats.misses++;
         this.stats.operations++;
         this.debouncedSaveStats();
     }
 
+    /**
+     * Execute an operation with circuit breaker protection.
+     * @template T - Return type of the operation
+     * @param {() => Promise<T>} operation - Async operation to execute
+     * @param {string} [operationName='redis_operation'] - Name of the operation for error messages
+     * @returns {Promise<T>} Result of the operation
+     * @throws {Error} If circuit breaker is open or operation fails
+     */
     private async withCircuitBreaker<T>(operation: () => Promise<T>, operationName = 'redis_operation'): Promise<T> {
         // Check if circuit breaker is open
         if (this.circuitBreaker.failures >= this.circuitBreaker.threshold) {
@@ -391,6 +494,16 @@ export class RedisFacade {
 
     // ========== BASIC OPERATIONS ==========
 
+    /**
+     * Get a value from Redis by key.
+     * @template T - Expected return type
+     * @param {string} key - Redis key to retrieve
+     * @returns {Promise<T | null>} Parsed value or null if not found
+     * @throws {Error} If key is invalid or Redis operation fails
+     * @example
+     * const value = await facade.get<string>('user:123');
+     * const user = await facade.get<User>('user:456');
+     */
     async get<T = string>(key: string): Promise<null | T> {
         return this.withCircuitBreaker(async () => {
             try {
@@ -415,6 +528,15 @@ export class RedisFacade {
         }, 'get');
     }
 
+    /**
+     * Get and parse JSON value from Redis by key.
+     * @template T - Expected return type after JSON parsing
+     * @param {string} key - Redis key to retrieve
+     * @returns {Promise<T | null>} Parsed JSON value or null if not found
+     * @throws {Error} If key is invalid, JSON parsing fails, or Redis operation fails
+     * @example
+     * const user = await facade.getJson<User>('user:123');
+     */
     async getJson<T = unknown>(key: string): Promise<null | T> {
         try {
             const raw = await (this.client as Redis).get(this.buildKey(key));
@@ -440,6 +562,17 @@ export class RedisFacade {
         }
     }
 
+    /**
+     * Set a value in Redis with optional expiration and mode options.
+     * @param {string} key - Redis key to set
+     * @param {Primitive | Record<string, unknown>} value - Value to store
+     * @param {RedisSetOptions} [options] - Optional set options (TTL, mode, etc.)
+     * @returns {Promise<string | null>} Redis SET command result
+     * @throws {Error} If key is invalid or Redis operation fails
+     * @example
+     * await facade.set('user:123', userData, { ttlSeconds: 3600 });
+     * await facade.set('counter', 42, { mode: 'NX' });
+     */
     async set(
         key: string,
         value: Primitive | Record<string, unknown>,
