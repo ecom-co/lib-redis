@@ -21,15 +21,36 @@ import { RedisService } from './redis.service';
 
 import type { RedisClient, RedisClientOptions, RedisModuleAsyncOptions, RedisModuleOptions } from './redis.interfaces';
 
+/**
+ * Normalize client name to lowercase and trimmed format.
+ * @param {string} [name] - Optional client name to normalize
+ * @returns {string} Normalized client name or default name
+ */
 const normalizeName = (name?: string): string => {
     const trimmedName = trim(name) || REDIS_DEFAULT_CLIENT_NAME;
 
     return toLower(trimmedName);
 };
 
+/**
+ * Type guard to check if value is a valid RedisClientOptions.
+ * @param {unknown} value - Value to check
+ * @returns {value is RedisClientOptions} True if value is valid RedisClientOptions
+ */
 const isRedisClientOptions = (value: unknown): value is RedisClientOptions => isObject(value);
+
+/**
+ * Type guard to check if value is a string.
+ * @param {unknown} value - Value to check
+ * @returns {value is string} True if value is a string
+ */
 const isStringName = (value: unknown): value is string => isString(value);
 
+/**
+ * Create providers for Redis clients based on module options.
+ * @param {RedisModuleOptions} options - Redis module configuration options
+ * @returns {Provider[]} Array of NestJS providers for Redis clients
+ */
 const createClientProviders = (options: RedisModuleOptions): Provider[] => {
     if (!isObject(options) || !isArray(options.clients)) {
         return [];
@@ -50,6 +71,11 @@ const createClientProviders = (options: RedisModuleOptions): Provider[] => {
     return mappedProviders;
 };
 
+/**
+ * Create providers for RedisFacade instances based on module options.
+ * @param {RedisModuleOptions} options - Redis module configuration options
+ * @returns {Provider[]} Array of NestJS providers for RedisFacade instances
+ */
 const createFacadeProviders = (options: RedisModuleOptions): Provider[] => {
     if (!isObject(options) || !isArray(options.clients)) {
         return [];
@@ -71,9 +97,24 @@ const createFacadeProviders = (options: RedisModuleOptions): Provider[] => {
     return mappedProviders;
 };
 
+/**
+ * Redis module for NestJS applications with multi-client support.
+ */
 @Global()
 @Module({})
 export class RedisModule {
+    /**
+     * Configure Redis module synchronously with static options.
+     * @param {RedisModuleOptions} options - Redis module configuration options
+     * @returns {DynamicModule} Configured NestJS dynamic module
+     * @throws {Error} If options is not a valid object
+     * @example
+     * RedisModule.forRoot({
+     *   clients: [
+     *     { type: 'single', name: 'default', host: 'localhost', port: 6379 }
+     *   ]
+     * })
+     */
     static forRoot(options: RedisModuleOptions): DynamicModule {
         if (!isObject(options)) {
             throw new Error('RedisModuleOptions must be a valid object');
@@ -122,6 +163,19 @@ export class RedisModule {
         };
     }
 
+    /**
+     * Configure Redis module asynchronously with factory function.
+     * @param {RedisModuleAsyncOptions} options - Async Redis module configuration options
+     * @returns {DynamicModule} Configured NestJS dynamic module
+     * @throws {Error} If options is not a valid object
+     * @example
+     * RedisModule.forRootAsync({
+     *   useFactory: (configService: ConfigService) => ({
+     *     clients: [{ type: 'single', name: 'default', host: configService.get('REDIS_HOST') }]
+     *   }),
+     *   inject: [ConfigService]
+     * })
+     */
     static forRootAsync(options: RedisModuleAsyncOptions): DynamicModule {
         if (!isObject(options)) {
             throw new Error('RedisModuleAsyncOptions must be a valid object');

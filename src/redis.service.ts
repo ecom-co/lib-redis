@@ -17,11 +17,22 @@ import { createRedisClient } from './redis.utils';
 
 import type { RedisClient, RedisModuleOptions } from './redis.interfaces';
 
+/**
+ * Redis service for managing multiple Redis client connections.
+ */
 @Injectable()
 export class RedisService implements OnModuleDestroy {
     private logger: LoggerService = new Logger(RedisService.name);
     private readonly nameToClient = new Map<string, RedisClient>();
 
+    /**
+     * Get a Redis client by name.
+     * @param {string} [name=REDIS_DEFAULT_CLIENT_NAME] - Name of the Redis client to retrieve
+     * @returns {RedisClient} Redis client instance
+     * @throws {Error} If client name is not a string or client is not found
+     * @example
+     * const client = redisService.get('cache');
+     */
     get(name = REDIS_DEFAULT_CLIENT_NAME): RedisClient {
         if (!isString(name)) {
             throw new Error('Redis client name must be a string');
@@ -39,6 +50,12 @@ export class RedisService implements OnModuleDestroy {
         return client;
     }
 
+    /**
+     * Configure the Redis service with module options.
+     * @param {RedisModuleOptions} options - Redis module configuration options
+     * @returns {void}
+     * @throws {Error} If options is invalid or client creation fails
+     */
     configure(options: RedisModuleOptions): void {
         if (!isObject(options)) {
             throw new Error('RedisModuleOptions must be a valid object');
@@ -76,6 +93,12 @@ export class RedisService implements OnModuleDestroy {
         });
     }
 
+    /**
+     * Attach event listeners to Redis client for logging.
+     * @param {string} name - Name of the Redis client
+     * @param {RedisClient} client - Redis client instance
+     * @returns {void}
+     */
     private attachLogs(name: string, client: RedisClient): void {
         if (!isString(name) || !isObject(client)) {
             this.logger.warn?.('Invalid parameters for attachLogs');
@@ -132,7 +155,10 @@ export class RedisService implements OnModuleDestroy {
         }
     }
 
-    // Ergonomic wrapper with helpers (JSON, prefix, caching, locks, ...)
+    /**
+     * Clean up Redis connections when module is destroyed.
+     * @returns {Promise<void>} Promise that resolves when all clients are closed
+     */
     async onModuleDestroy(): Promise<void> {
         const clientEntries = Array.from(this.nameToClient.entries());
 
@@ -178,6 +204,14 @@ export class RedisService implements OnModuleDestroy {
         this.logger?.log?.('All Redis clients have been closed');
     }
 
+    /**
+     * Create a RedisFacade instance with optional key prefix.
+     * @param {string} [name=REDIS_DEFAULT_CLIENT_NAME] - Name of the Redis client to use
+     * @param {string} [prefix=''] - Optional key prefix for all operations
+     * @returns {RedisFacade} High-level Redis facade instance
+     * @example
+     * const cache = redisService.use('cache', 'user:');
+     */
     use(name = REDIS_DEFAULT_CLIENT_NAME, prefix = ''): RedisFacade {
         const normalizedName = isString(name) ? name : REDIS_DEFAULT_CLIENT_NAME;
         const normalizedPrefix = isString(prefix) ? prefix : '';
