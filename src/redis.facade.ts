@@ -292,8 +292,9 @@ export class RedisFacade {
 
     // ========== SETUP & CLEANUP METHODS ==========
     /**
-     * Set up Redis client connection event handlers.
+     * Sets up Redis client connection event handlers.
      * @returns {void}
+     * @private
      */
     private setupConnectionHandlers(): void {
         if (this.isRedisClient(this.client)) {
@@ -318,6 +319,7 @@ export class RedisFacade {
     /**
      * Set up debounced stats persistence mechanism.
      * @returns {void}
+     * @private
      */
     private setupDebouncedStats(): void {
         this.debouncedSaveStats = debounce(() => {
@@ -340,8 +342,9 @@ export class RedisFacade {
     // ========== UTILITY METHODS ==========
     /**
      * Type guard to check if client is a Redis instance.
-     * @param {RedisClient} client - Redis client to check
+     * @param {RedisClient} client - Redis client to check.
      * @returns {client is Redis} True if client is a Redis instance
+     * @private
      */
     private isRedisClient(client: RedisClient): client is Redis {
         return client && typeof client === 'object' && 'set' in client && typeof client.set === 'function';
@@ -351,9 +354,10 @@ export class RedisFacade {
 
     /**
      * Build the final Redis key with prefix if configured.
-     * @param {string} key - Base key name
-     * @returns {string} Final Redis key with prefix
-     * @throws {Error} If key is invalid
+     * @param {string} key - Base key name.
+     * @returns {string} Final Redis key with prefix.
+     * @throws {Error} If key is invalid.
+     * @private
      */
     private buildKey(key: string): string {
         if (!validateKey(key)) {
@@ -365,10 +369,11 @@ export class RedisFacade {
 
     /**
      * Create an enhanced error with context and original error details.
-     * @param {string} message - Error message
-     * @param {unknown} originalError - Original error that occurred
-     * @param {Record<string, unknown>} [context] - Additional context information
-     * @returns {Error} Enhanced error with additional context
+     * @param {string} message - Error message.
+     * @param {unknown} originalError - Original error that occurred.
+     * @param {Record<string, unknown>} [context] - Additional context information.
+     * @returns {Error} Enhanced error with additional context.
+     * @private
      */
     private createEnhancedError(message: string, originalError: unknown, context?: Record<string, unknown>): Error {
         const errorMessage = `${message}: ${get(originalError, 'message', 'Unknown error')}`;
@@ -407,7 +412,8 @@ export class RedisFacade {
 
     /**
      * Persist current stats to Redis.
-     * @returns {Promise<void>} Promise that resolves when stats are persisted
+     * @returns {Promise<void>} Promise that resolves when stats are persisted.
+     * @private
      */
     private async persistStats(): Promise<void> {
         try {
@@ -429,6 +435,7 @@ export class RedisFacade {
     /**
      * Record an error operation in stats.
      * @returns {void}
+     * @private
      */
     private recordError(): void {
         this.stats.errors++;
@@ -439,6 +446,7 @@ export class RedisFacade {
     /**
      * Record a cache hit in stats.
      * @returns {void}
+     * @private
      */
     private recordHit(): void {
         this.stats.hits++;
@@ -449,6 +457,7 @@ export class RedisFacade {
     /**
      * Record a cache miss in stats.
      * @returns {void}
+     * @private
      */
     private recordMiss(): void {
         this.stats.misses++;
@@ -459,10 +468,11 @@ export class RedisFacade {
     /**
      * Execute an operation with circuit breaker protection.
      * @template T - Return type of the operation
-     * @param {() => Promise<T>} operation - Async operation to execute
-     * @param {string} [operationName='redis_operation'] - Name of the operation for error messages
-     * @returns {Promise<T>} Result of the operation
-     * @throws {Error} If circuit breaker is open or operation fails
+     * @param {() => Promise<T>} operation - Async operation to execute.
+     * @param {string} [operationName='redis_operation'] - Name of the operation for error messages.
+     * @returns {Promise<T>} Result of the operation.
+     * @throws {Error} If circuit breaker is open or operation fails.
+     * @private
      */
     private async withCircuitBreaker<T>(operation: () => Promise<T>, operationName = 'redis_operation'): Promise<T> {
         // Check if circuit breaker is open
@@ -497,9 +507,9 @@ export class RedisFacade {
     /**
      * Get a value from Redis by key.
      * @template T - Expected return type
-     * @param {string} key - Redis key to retrieve
-     * @returns {Promise<T | null>} Parsed value or null if not found
-     * @throws {Error} If key is invalid or Redis operation fails
+     * @param {string} key - Redis key to retrieve.
+     * @returns {Promise<T | null>} Parsed value or null if not found.
+     * @throws {Error} If key is invalid or Redis operation fails.
      * @example
      * const value = await facade.get<string>('user:123');
      * const user = await facade.get<User>('user:456');
@@ -531,9 +541,9 @@ export class RedisFacade {
     /**
      * Get and parse JSON value from Redis by key.
      * @template T - Expected return type after JSON parsing
-     * @param {string} key - Redis key to retrieve
-     * @returns {Promise<T | null>} Parsed JSON value or null if not found
-     * @throws {Error} If key is invalid, JSON parsing fails, or Redis operation fails
+     * @param {string} key - Redis key to retrieve.
+     * @returns {Promise<T | null>} Parsed JSON value or null if not found.
+     * @throws {Error} If key is invalid, JSON parsing fails, or Redis operation fails.
      * @example
      * const user = await facade.getJson<User>('user:123');
      */
@@ -564,10 +574,10 @@ export class RedisFacade {
 
     /**
      * Set a value in Redis with optional expiration and mode options.
-     * @param {string} key - Redis key to set
-     * @param {Primitive | Record<string, unknown>} value - Value to store
-     * @param {RedisSetOptions} [options] - Optional set options (TTL, mode, etc.)
-     * @returns {Promise<string | null>} Redis SET command result
+     * @param {string} key - Redis key to set.
+     * @param {Primitive | Record<string, unknown>} value - Value to store.
+     * @param {RedisSetOptions} [options] - Optional set options (TTL, mode, etc.).
+     * @returns {Promise<string | null>} Redis SET command result.
      * @throws {Error} If key is invalid or Redis operation fails
      * @example
      * await facade.set('user:123', userData, { ttlSeconds: 3600 });
@@ -629,10 +639,10 @@ export class RedisFacade {
 
     /**
      * Set a JSON value in Redis with optional expiration options.
-     * @param {string} key - Redis key to set
-     * @param {unknown} value - Value to JSON.stringify and store
-     * @param {RedisSetOptions} [options] - Optional set options (TTL, mode, etc.)
-     * @returns {Promise<string | null>} Redis SET command result
+     * @param {string} key - Redis key to set.
+     * @param {unknown} value - Value to JSON.stringify and store.
+     * @param {RedisSetOptions} [options] - Optional set options (TTL, mode, etc.).
+     * @returns {Promise<string | null>} Redis SET command result.
      * @throws {Error} If JSON stringification fails or Redis operation fails
      * @example
      * await facade.setJson('user:123', { id: 123, name: 'John' }, { ttlSeconds: 3600 });
@@ -652,10 +662,10 @@ export class RedisFacade {
     /**
      * Get value from cache or execute loader function if not found.
      * @template T - Expected return type
-     * @param {string} key - Cache key to check
-     * @param {number} ttlSeconds - TTL in seconds for cached value
-     * @param {() => Promise<T>} loader - Function to load value if not cached
-     * @returns {Promise<T>} Cached value or result from loader function
+     * @param {string} key - Cache key to check.
+     * @param {number} ttlSeconds - TTL in seconds for cached value.
+     * @param {() => Promise<T>} loader - Function to load value if not cached.
+     * @returns {Promise<T>} Cached value or result from loader function.
      * @throws {Error} If loader is not a function or operations fail
      * @example
      * const user = await facade.getOrSet('user:123', 3600, () => fetchUserFromDB(123));
@@ -679,10 +689,10 @@ export class RedisFacade {
     /**
      * Get value from cache or execute loader function with custom options.
      * @template T - Expected return type
-     * @param {string} key - Cache key to check
-     * @param {() => Promise<T>} loader - Function to load value if not cached
-     * @param {RedisSetOptions} options - Set options for cached value
-     * @returns {Promise<T>} Cached value or result from loader function
+     * @param {string} key - Cache key to check.
+     * @param {() => Promise<T>} loader - Function to load value if not cached.
+     * @param {RedisSetOptions} options - Set options for cached value.
+     * @returns {Promise<T>} Cached value or result from loader function.
      * @throws {Error} If loader is not a function or operations fail
      * @example
      * const data = await facade.getOrSetWithOptions('data:456', loadData, { pxMs: 5000 });
@@ -707,10 +717,10 @@ export class RedisFacade {
      * Create a memoized function that caches results in Redis.
      * @template TArgs - Function arguments tuple type
      * @template TReturn - Function return type
-     * @param {(...args: TArgs) => Promise<TReturn>} fn - Function to memoize
-     * @param {(...args: TArgs) => string} keyGenerator - Function to generate cache keys from arguments
-     * @param {number} [ttlSeconds=3600] - TTL in seconds for cached results
-     * @returns {(...args: TArgs) => Promise<TReturn>} Memoized function
+     * @param {(...args: TArgs) => Promise<TReturn>} fn - Function to memoize.
+     * @param {(...args: TArgs) => string} keyGenerator - Function to generate cache keys from arguments.
+     * @param {number} [ttlSeconds=3600] - TTL in seconds for cached results.
+     * @returns {(...args: TArgs) => Promise<TReturn>} Memoized function.
      * @example
      * const memoizedFetch = facade.memoize(
      *   (id: number) => fetchUser(id),
@@ -735,10 +745,10 @@ export class RedisFacade {
     /**
      * Refresh cache with new value from loader function.
      * @template T - Expected return type
-     * @param {string} key - Cache key to refresh
-     * @param {() => Promise<T>} loader - Function to load fresh value
-     * @param {RedisSetOptions} [options] - Optional set options for cached value
-     * @returns {Promise<T>} Fresh value from loader function
+     * @param {string} key - Cache key to refresh.
+     * @param {() => Promise<T>} loader - Function to load fresh value.
+     * @param {RedisSetOptions} [options] - Optional set options for cached value.
+     * @returns {Promise<T>} Fresh value from loader function.
      * @throws {Error} If loader is not a function or operations fail
      * @example
      * const freshData = await facade.refresh('data:123', () => fetchDataFromAPI(123));
@@ -759,9 +769,9 @@ export class RedisFacade {
 
     /**
      * Execute multiple Redis operations in batch.
-     * @param {BatchOperation[]} operations - Array of batch operations to execute
-     * @returns {Promise<unknown[]>} Array of results from batch operations
-     * @throws {Error} If operations array is invalid or batch execution fails
+     * @param {BatchOperation[]} operations - Array of batch operations to execute.
+     * @returns {Promise<unknown[]>} Array of results from batch operations.
+     * @throws {Error} If operations array is invalid or batch execution fails.
      * @example
      * const results = await facade.executeBatch([
      *   { operation: 'set', key: 'key1', value: 'value1' },
@@ -814,9 +824,9 @@ export class RedisFacade {
     /**
      * Get multiple values from Redis by keys.
      * @template T - Expected return type for each value
-     * @param {string[]} keys - Array of Redis keys to retrieve
-     * @returns {Promise<Array<T | null>>} Array of parsed values or null for missing keys
-     * @throws {Error} If Redis operation fails
+     * @param {string[]} keys - Array of Redis keys to retrieve.
+     * @returns {Promise<Array<T | null>>} Array of parsed values or null for missing keys.
+     * @throws {Error} If Redis operation fails.
      * @example
      * const values = await facade.mget<string>(['key1', 'key2', 'key3']);
      * const users = await facade.mget<User>(['user:1', 'user:2']);
@@ -862,9 +872,9 @@ export class RedisFacade {
 
     /**
      * Set multiple key-value pairs in Redis with optional individual options.
-     * @param {Array<{ key: string; value: unknown; options?: RedisSetOptions }>} keyValuePairs - Array of key-value pairs to set
-     * @returns {Promise<void>} Promise that resolves when all values are set
-     * @throws {Error} If Redis operations fail
+     * @param {Array<{ key: string; value: unknown; options?: RedisSetOptions }>} keyValuePairs - Array of key-value pairs to set.
+     * @returns {Promise<void>} Promise that resolves when all values are set.
+     * @throws {Error} If Redis operations fail.
      * @example
      * await facade.mset([
      *   { key: 'user:1', value: { id: 1, name: 'John' } },
@@ -923,7 +933,7 @@ export class RedisFacade {
     /**
      * Get counter value from Redis.
      * @param {string} key - Counter key to retrieve
-     * @returns {Promise<number>} Counter value as integer, 0 if not found
+     * @returns {Promise<number>} Counter value as integer, 0 if not found.
      * @example
      * const count = await facade.getCounter('page:views');
      */
@@ -935,10 +945,10 @@ export class RedisFacade {
 
     /**
      * Set counter value in Redis with optional TTL.
-     * @param {string} key - Counter key to set
-     * @param {number} value - Counter value to set
-     * @param {number} [ttlSeconds] - Optional TTL in seconds
-     * @returns {Promise<void>} Promise that resolves when counter is set
+     * @param {string} key - Counter key to set.
+     * @param {number} value - Counter value to set.
+     * @param {number} [ttlSeconds] - Optional TTL in seconds.
+     * @returns {Promise<void>} Promise that resolves when counter is set.
      * @example
      * await facade.setCounter('page:views', 100, 3600);
      */
@@ -951,9 +961,9 @@ export class RedisFacade {
 
     /**
      * Decrement counter by specified amount.
-     * @param {string} key - Counter key to decrement
-     * @param {number} [amount=1] - Amount to decrement by
-     * @returns {Promise<number>} New counter value after decrement
+     * @param {string} key - Counter key to decrement.
+     * @param {number} [amount=1] - Amount to decrement by.
+     * @returns {Promise<number>} New counter value after decrement.
      * @example
      * const newCount = await facade.decr('inventory:item1', 5);
      */
@@ -968,9 +978,9 @@ export class RedisFacade {
 
     /**
      * Increment counter by specified amount.
-     * @param {string} key - Counter key to increment
-     * @param {number} [amount=1] - Amount to increment by
-     * @returns {Promise<number>} New counter value after increment
+     * @param {string} key - Counter key to increment.
+     * @param {number} [amount=1] - Amount to increment by.
+     * @returns {Promise<number>} New counter value after increment.
      * @example
      * const newCount = await facade.incr('page:views', 1);
      */
@@ -985,9 +995,9 @@ export class RedisFacade {
 
     /**
      * Increment float counter by specified amount.
-     * @param {string} key - Counter key to increment
-     * @param {number} amount - Float amount to increment by
-     * @returns {Promise<string>} New counter value as string after increment
+     * @param {string} key - Counter key to increment.
+     * @param {number} amount - Float amount to increment by.
+     * @returns {Promise<string>} New counter value as string after increment.
      * @example
      * const newValue = await facade.incrFloat('temperature:avg', 1.5);
      */
@@ -999,8 +1009,8 @@ export class RedisFacade {
 
     /**
      * Increment multiple counters in a single pipeline operation.
-     * @param {Array<{ key: string; amount?: number }>} counters - Array of counters to increment
-     * @returns {Promise<number[]>} Array of new counter values after increment
+     * @param {Array<{ key: string; amount?: number }>} counters - Array of counters to increment.
+     * @returns {Promise<number[]>} Array of new counter values after increment.
      * @example
      * const results = await facade.multiIncr([
      *   { key: 'counter1', amount: 5 },
@@ -1034,8 +1044,8 @@ export class RedisFacade {
 
     /**
      * Check if one or more keys exist in Redis.
-     * @param {...string} keys - Keys to check for existence
-     * @returns {Promise<number>} Number of keys that exist
+     * @param {...string} keys - Keys to check for existence.
+     * @returns {Promise<number>} Number of keys that exist.
      * @example
      * const count = await facade.exists('user:1', 'user:2', 'user:3');
      */
@@ -1051,9 +1061,9 @@ export class RedisFacade {
 
     /**
      * Delete a key or keys matching a pattern.
-     * @param {string} keyOrPattern - Key to delete or pattern to match (with *)
-     * @returns {Promise<number>} Number of keys deleted
-     * @throws {Error} If Redis operation fails
+     * @param {string} keyOrPattern - Key to delete or pattern to match (with *).
+     * @returns {Promise<number>} Number of keys deleted.
+     * @throws {Error} If Redis operation fails.
      * @example
      * await facade.del('user:123');
      * await facade.del('temp:*');
@@ -1100,6 +1110,14 @@ export class RedisFacade {
         }, 'del');
     }
 
+    /**
+     * Set a timeout on a key.
+     * @param {string} key - The key to set the timeout on.
+     * @param {number} ttlSeconds - The timeout in seconds.
+     * @returns {Promise<boolean>} True if the timeout was set, false otherwise.
+     * @example
+     * await facade.expire('mykey', 60); // expires in 60 seconds
+     */
     async expire(key: string, ttlSeconds: number): Promise<boolean> {
         const safeTtl = safeParseInteger(ttlSeconds);
         const result = await (this.client as Redis).expire(this.buildKey(key), safeTtl);
@@ -1107,6 +1125,15 @@ export class RedisFacade {
         return result === 1;
     }
 
+    /**
+     * Set a timeout on a key to a specific UNIX timestamp.
+     * @param {string} key - The key to set the timeout on.
+     * @param {number} timestamp - The UNIX timestamp in seconds.
+     * @returns {Promise<boolean>} True if the timeout was set, false otherwise.
+     * @example
+     * const tomorrow = Math.floor(Date.now() / 1000) + 86400;
+     * await facade.expireAt('mykey', tomorrow);
+     */
     async expireAt(key: string, timestamp: number): Promise<boolean> {
         const safeTimestamp = safeParseInteger(timestamp);
         const result = await (this.client as Redis).expireat(this.buildKey(key), safeTimestamp);
@@ -1114,6 +1141,13 @@ export class RedisFacade {
         return result === 1;
     }
 
+    /**
+     * Find all keys matching a given pattern.
+     * @param {string} [pattern='*'] - The pattern to match.
+     * @returns {Promise<string[]>} A list of keys matching the pattern.
+     * @example
+     * const userKeys = await facade.keys('user:*');
+     */
     async keys(pattern = '*'): Promise<string[]> {
         const fullPattern = isEmpty(this.keyPrefix) ? pattern : `${this.keyPrefix}:${pattern}`;
         const keys = await (this.client as Redis).keys(fullPattern);
@@ -1121,6 +1155,14 @@ export class RedisFacade {
         return isArray(keys) ? keys : [];
     }
 
+    /**
+     * Find all keys matching multiple patterns.
+     * @param {string[]} patterns - The patterns to match.
+     * @returns {Promise<Record<string, string[]>>} A dictionary mapping patterns to matching keys.
+     * @example
+     * const keys = await facade.keysByPattern(['user:*', 'session:*']);
+     * // { 'user:*': ['user:1'], 'session:*': ['session:abc'] }
+     */
     async keysByPattern(patterns: string[]): Promise<Record<string, string[]>> {
         if (!isArray(patterns) || isEmpty(patterns)) return {};
 
@@ -1135,20 +1177,50 @@ export class RedisFacade {
         return result;
     }
 
+    /**
+     * Remove the timeout from a key.
+     * @param {string} key - The key to make persistent.
+     * @returns {Promise<boolean>} True if the timeout was removed, false otherwise.
+     * @example
+     * await facade.persist('mykey');
+     */
     async persist(key: string): Promise<boolean> {
         const result = await (this.client as Redis).persist(this.buildKey(key));
 
         return result === 1;
     }
 
+    /**
+     * Return a random key from the keyspace.
+     * @returns {Promise<string | null>} A random key, or null if the database is empty.
+     * @example
+     * const random = await facade.randomKey();
+     */
     async randomKey(): Promise<null | string> {
         return (this.client as Redis).randomkey();
     }
 
+    /**
+     * Rename a key.
+     * @param {string} oldKey - The old key name.
+     * @param {string} newKey - The new key name.
+     * @returns {Promise<'OK'>} 'OK' if the key was renamed.
+     * @example
+     * await facade.rename('old_name', 'new_name');
+     */
     async rename(oldKey: string, newKey: string): Promise<'OK'> {
         return (this.client as Redis).rename(this.buildKey(oldKey), this.buildKey(newKey));
     }
 
+    /**
+     * Iteratively find all keys matching a pattern using SCAN.
+     * @param {string} pattern - The pattern to match.
+     * @param {number} [count=this.config.scanCount] - The number of keys to fetch per iteration.
+     * @returns {Promise<string[]>} A list of keys matching the pattern.
+     * @throws {Error} If the Redis operation fails.
+     * @example
+     * const userKeys = await facade.scanKeys('user:*', 100);
+     */
     async scanKeys(pattern: string, count = this.config.scanCount): Promise<string[]> {
         return this.withCircuitBreaker(async () => {
             try {
@@ -1188,16 +1260,38 @@ export class RedisFacade {
         }, 'scan');
     }
 
+    /**
+     * Get the time to live for a key in seconds.
+     * @param {string} key - The key to check.
+     * @returns {Promise<number>} The TTL in seconds, or -1 if the key has no expiry, or -2 if the key does not exist.
+     * @example
+     * const ttl = await facade.ttl('mykey');
+     */
     async ttl(key: string): Promise<number> {
         return (this.client as Redis).ttl(this.buildKey(key));
     }
 
+    /**
+     * Get the data type of a key.
+     * @param {string} key - The key to check.
+     * @returns {Promise<string>} The type of key, or 'none' if the key does not exist.
+     * @example
+     * const keyType = await facade.type('mykey'); // 'string', 'list', 'hash', etc.
+     */
     async type(key: string): Promise<string> {
         return (this.client as Redis).type(this.buildKey(key));
     }
 
     // ========== HASH OPERATIONS WITH LODASH ==========
 
+    /**
+     * Delete one or more hash fields.
+     * @param {string} key - The hash key.
+     * @param {...string} fields - The fields to delete.
+     * @returns {Promise<number>} The number of fields that were removed.
+     * @example
+     * await facade.hdel('user:1', 'email', 'phone');
+     */
     async hdel(key: string, ...fields: string[]): Promise<number> {
         const validFields = filter(fields, (field) => isString(field) && !isEmpty(field));
 
@@ -1206,6 +1300,14 @@ export class RedisFacade {
         return (this.client as Redis).hdel(this.buildKey(key), ...validFields);
     }
 
+    /**
+     * Check if a hash field exists.
+     * @param {string} key - The hash key.
+     * @param {string} field - The field to check.
+     * @returns {Promise<boolean>} True if the field exists, false otherwise.
+     * @example
+     * const hasEmail = await facade.hexists('user:1', 'email');
+     */
     async hexists(key: string, field: string): Promise<boolean> {
         if (!isString(field) || isEmpty(field)) return false;
 
@@ -1217,9 +1319,9 @@ export class RedisFacade {
     /**
      * Get a field value from a Redis hash.
      * @template T - Expected return type
-     * @param {string} key - Hash key
-     * @param {string} field - Field name to retrieve
-     * @returns {Promise<T | null>} Field value or null if not found
+     * @param {string} key - Hash key.
+     * @param {string} field - Field name to retrieve.
+     * @returns {Promise<T | null>} Field value or null if not found.
      * @example
      * const name = await facade.hget<string>('user:123', 'name');
      */
@@ -1234,8 +1336,8 @@ export class RedisFacade {
     /**
      * Get all fields and values from a Redis hash.
      * @template T - Expected return type (default: Record<string, string>)
-     * @param {string} key - Hash key
-     * @returns {Promise<T>} Object with all hash fields and values
+     * @param {string} key - Hash key.
+     * @returns {Promise<T>} Object with all hash fields and values.
      * @example
      * const user = await facade.hgetall<User>('user:123');
      */
@@ -1257,6 +1359,16 @@ export class RedisFacade {
         return parsed as T;
     }
 
+    /**
+     * Increment the integer value of a hash field by the given number.
+     * @param {string} key - The hash key.
+     * @param {string} field - The field to increment.
+     * @param {number} amount - The amount to increment by.
+     * @returns {Promise<number>} The value of the field after the increment.
+     * @throws {Error} If field is not a non-empty string.
+     * @example
+     * const newScore = await facade.hincrby('user:1', 'score', 10);
+     */
     async hincrby(key: string, field: string, amount: number): Promise<number> {
         if (!isString(field) || isEmpty(field)) {
             throw new Error('Field must be a non-empty string');
@@ -1267,16 +1379,39 @@ export class RedisFacade {
         return (this.client as Redis).hincrby(this.buildKey(key), field, safeAmount);
     }
 
+    /**
+     * Get all the fields in a hash.
+     * @param {string} key - The hash key.
+     * @returns {Promise<string[]>} A list of all fields in the hash.
+     * @example
+     * const fields = await facade.hkeys('user:1');
+     */
     async hkeys(key: string): Promise<string[]> {
         const keys = await (this.client as Redis).hkeys(this.buildKey(key));
 
         return isArray(keys) ? keys : [];
     }
 
+    /**
+     * Get the number of fields in a hash.
+     * @param {string} key - The hash key.
+     * @returns {Promise<number>} The number of fields in the hash.
+     * @example
+     * const fieldCount = await facade.hlen('user:1');
+     */
     async hlen(key: string): Promise<number> {
         return (this.client as Redis).hlen(this.buildKey(key));
     }
 
+    /**
+     * Get the values of all the given hash fields and return as an object.
+     * @template T - The expected object type.
+     * @param {string} key - The hash key.
+     * @param {Array<keyof T & string>} fields - The fields to retrieve.
+     * @returns {Promise<T>} An object containing the requested fields and their values.
+     * @example
+     * const partialUser = await facade.hmgetObject<{ name: string; email: string }>('user:1', ['name', 'email']);
+     */
     async hmgetObject<T extends Record<string, unknown>>(key: string, fields: Array<keyof T & string>): Promise<T> {
         if (!isArray(fields) || isEmpty(fields)) {
             return {} as T;
@@ -1301,6 +1436,16 @@ export class RedisFacade {
         return result as T;
     }
 
+    /**
+     * Set multiple hash fields to multiple values for multiple keys.
+     * @param {Array<{ key: string; obj: Record<string, Primitive> }>} operations - An array of operations to perform.
+     * @returns {Promise<void>} A promise that resolves when all operations are complete.
+     * @example
+     * await facade.hmsetMultiple([
+     *   { key: 'user:1', obj: { name: 'Alice', score: 100 } },
+     *   { key: 'user:2', obj: { name: 'Bob', score: 95 } }
+     * ]);
+     */
     async hmsetMultiple(operations: Array<{ key: string; obj: Record<string, Primitive> }>): Promise<void> {
         if (!isArray(operations) || isEmpty(operations)) return;
 
@@ -1322,6 +1467,15 @@ export class RedisFacade {
         await pipeline.exec();
     }
 
+    /**
+     * Set multiple hash fields to multiple values.
+     * @param {string} key - The hash key.
+     * @param {Record<string, Primitive>} obj - An object of fields and values to set.
+     * @returns {Promise<'OK'>} 'OK' if the command was successful.
+     * @throws {Error} If obj is not a non-empty plain object.
+     * @example
+     * await facade.hmsetObject('user:1', { name: 'Alice', email: 'alice@example.com' });
+     */
     async hmsetObject(key: string, obj: Record<string, Primitive>): Promise<'OK'> {
         if (!isPlainObject(obj) || isEmpty(obj)) {
             throw new Error('hmsetObject requires a non-empty plain object');
@@ -1332,6 +1486,16 @@ export class RedisFacade {
         return (this.client as Redis).hmset(this.buildKey(key), ...(flat as [string, string]));
     }
 
+    /**
+     * Set the string value of a hash field.
+     * @param {string} key - The hash key.
+     * @param {string} field - The field to set.
+     * @param {unknown} value - The value to set.
+     * @returns {Promise<number>} 1 if field is a new field in the hash and value was set, 0 if field already exists and the value was updated.
+     * @throws {Error} If field is not a non-empty string.
+     * @example
+     * await facade.hset('user:1', 'email', 'new.email@example.com');
+     */
     async hset(key: string, field: string, value: unknown): Promise<number> {
         if (!isString(field) || isEmpty(field)) {
             throw new Error('Field must be a non-empty string');
@@ -1340,6 +1504,13 @@ export class RedisFacade {
         return (this.client as Redis).hset(this.buildKey(key), field, safeToStringValue(value));
     }
 
+    /**
+     * Get all the values in a hash.
+     * @param {string} key - The hash key.
+     * @returns {Promise<string[]>} A list of all values in the hash.
+     * @example
+     * const values = await facade.hvals('user:1');
+     */
     async hvals(key: string): Promise<string[]> {
         const values = await (this.client as Redis).hvals(this.buildKey(key));
 
@@ -1348,6 +1519,15 @@ export class RedisFacade {
 
     // ========== LIST OPERATIONS WITH LODASH ==========
 
+    /**
+     * Get an element from a list by its index.
+     * @template T - The expected element type.
+     * @param {string} key - The list key.
+     * @param {number} index - The index of the element.
+     * @returns {Promise<T | null>} The element at the specified index, or null if the index is out of range.
+     * @example
+     * const firstTask = await facade.lindex<string>('tasks', 0);
+     */
     async lindex<T = string>(key: string, index: number): Promise<null | T> {
         const safeIndex = safeParseInteger(index, 0);
         const raw = await (this.client as Redis).lindex(this.buildKey(key), safeIndex);
@@ -1355,6 +1535,17 @@ export class RedisFacade {
         return safeTryParseJson<T>(raw);
     }
 
+    /**
+     * Insert an element before or after another element in a list.
+     * @template T - The element type.
+     * @param {string} key - The list key.
+     * @param {'BEFORE' | 'AFTER'} position - Where to insert the element.
+     * @param {T} pivot - The element to insert before or after.
+     * @param {T} element - The element to insert.
+     * @returns {Promise<number>} The length of the list after the insert operation, or -1 if the pivot was not found.
+     * @example
+     * await facade.linsert('tasks', 'BEFORE', 'task2', 'task1.5');
+     */
     async linsert<T = string>(key: string, position: 'AFTER' | 'BEFORE', pivot: T, element: T): Promise<number> {
         const k = this.buildKey(key);
         const p = safeToStringValue(pivot);
@@ -1365,10 +1556,27 @@ export class RedisFacade {
             : (this.client as Redis).linsert(k, 'AFTER', p, e);
     }
 
+    /**
+     * Get the length of a list.
+     * @param {string} key - The list key.
+     * @returns {Promise<number>} The length of the list.
+     * @example
+     * const taskCount = await facade.llen('tasks');
+     */
     async llen(key: string): Promise<number> {
         return (this.client as Redis).llen(this.buildKey(key));
     }
 
+    /**
+     * Remove and get the first element in a list.
+     * @template T - The expected element type.
+     * @param {string} key - The list key.
+     * @param {number} [count] - The number of elements to pop.
+     * @returns {Promise<T | T[] | null>} The popped element(s), or null if the list is empty.
+     * @example
+     * const task = await facade.lpop<string>('tasks');
+     * const tasks = await facade.lpop<string>('tasks', 3);
+     */
     async lpop<T = string>(key: string, count?: number): Promise<null | T | T[]> {
         const prefixedKey = this.buildKey(key);
 
@@ -1385,8 +1593,8 @@ export class RedisFacade {
 
     /**
      * Push values to the left (beginning) of a Redis list.
-     * @param {string} key - List key
-     * @param {...unknown} values - Values to push to the list
+     * @param {string} key - List key.
+     * @param {...unknown} values - Values to push to the list.
      * @returns {Promise<number>} New length of the list
      * @example
      * const length = await facade.lpush('tasks', 'task1', 'task2', 'task3');
@@ -1402,10 +1610,10 @@ export class RedisFacade {
     /**
      * Get a range of elements from a Redis list.
      * @template T - Expected element type
-     * @param {string} key - List key
-     * @param {number} start - Start index (0-based)
-     * @param {number} stop - Stop index (-1 for end)
-     * @returns {Promise<T[]>} Array of list elements in the range
+     * @param {string} key - List key.
+     * @param {number} start - Start index (0-based).
+     * @param {number} stop - Stop index (-1 for end).
+     * @returns {Promise<T[]>} Array of list elements in the range.
      * @example
      * const tasks = await facade.lrange<string>('tasks', 0, 9); // First 10 elements
      */
@@ -1418,12 +1626,34 @@ export class RedisFacade {
         return map(values, (v) => safeTryParseJson<T>(v) as T);
     }
 
+    /**
+     * Remove elements from a list.
+     * @template T - The element type.
+     * @param {string} key - The list key.
+     * @param {number} count - The number of elements to remove.
+     *   - count > 0: Remove elements equal to `element` moving from head to tail.
+     *   - count < 0: Remove elements equal to `element` moving from tail to head.
+     *   - count = 0: Remove all elements equal to `element`.
+     * @param {T} element - The element to remove.
+     * @returns {Promise<number>} The number of removed elements.
+     * @example
+     * await facade.lrem('tasks', 1, 'duplicate_task');
+     */
     async lrem<T = string>(key: string, count: number, element: T): Promise<number> {
         const safeCount = safeParseInteger(count, 0);
 
         return (this.client as Redis).lrem(this.buildKey(key), safeCount, safeToStringValue(element));
     }
 
+    /**
+     * Trim a list to a specified range.
+     * @param {string} key - The list key.
+     * @param {number} start - The start index.
+     * @param {number} stop - The stop index.
+     * @returns {Promise<'OK'>} 'OK' if the command was successful.
+     * @example
+     * await facade.ltrim('tasks', 0, 99); // Keep the first 100 tasks
+     */
     async ltrim(key: string, start: number, stop: number): Promise<'OK'> {
         const safeStart = safeParseInteger(start, 0);
         const safeStop = safeParseInteger(stop, -1);
@@ -1431,6 +1661,16 @@ export class RedisFacade {
         return (this.client as Redis).ltrim(this.buildKey(key), safeStart, safeStop);
     }
 
+    /**
+     * Remove and get the last element in a list.
+     * @template T - The expected element type.
+     * @param {string} key - The list key.
+     * @param {number} [count] - The number of elements to pop.
+     * @returns {Promise<T | T[] | null>} The popped element(s), or null if the list is empty.
+     * @example
+     * const task = await facade.rpop<string>('tasks');
+     * const tasks = await facade.rpop<string>('tasks', 3);
+     */
     async rpop<T = string>(key: string, count?: number): Promise<null | T | T[]> {
         const prefixedKey = this.buildKey(key);
 
@@ -1445,6 +1685,14 @@ export class RedisFacade {
         return safeTryParseJson<T>(raw);
     }
 
+    /**
+     * Append one or more values to a list.
+     * @param {string} key - The list key.
+     * @param {...unknown} values - The values to append.
+     * @returns {Promise<number>} The length of the list after the push operation.
+     * @example
+     * await facade.rpush('logs', 'log entry 1', 'log entry 2');
+     */
     async rpush(key: string, ...values: unknown[]): Promise<number> {
         if (isEmpty(values)) return 0;
 
@@ -1457,9 +1705,9 @@ export class RedisFacade {
 
     /**
      * Add members to a Redis set.
-     * @param {string} key - Set key
-     * @param {...unknown} members - Members to add to the set
-     * @returns {Promise<number>} Number of new members added
+     * @param {string} key - Set key.
+     * @param {...unknown} members - Members to add to the set.
+     * @returns {Promise<number>} Number of new members added.
      * @example
      * const added = await facade.sadd('tags', 'javascript', 'nodejs', 'redis');
      */
@@ -1473,8 +1721,8 @@ export class RedisFacade {
 
     /**
      * Get the number of members in a Redis set.
-     * @param {string} key - Set key
-     * @returns {Promise<number>} Number of members in the set
+     * @param {string} key - Set key.
+     * @returns {Promise<number>} Number of members in the set.
      * @example
      * const count = await facade.scard('tags');
      */
@@ -1482,6 +1730,14 @@ export class RedisFacade {
         return (this.client as Redis).scard(this.buildKey(key));
     }
 
+    /**
+     * Get the difference between multiple sets.
+     * @template T - The expected member type.
+     * @param {...string} keys - The keys of the sets to compare.
+     * @returns {Promise<T[]>} A list of members of the first set that are not in the other sets.
+     * @example
+     * const uniqueTags = await facade.sdiff<string>('all_tags', 'user_tags');
+     */
     async sdiff<T = string>(...keys: string[]): Promise<T[]> {
         const validKeys = filter(keys, validateKey);
 
@@ -1493,6 +1749,14 @@ export class RedisFacade {
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
+    /**
+     * Get the intersection of multiple sets.
+     * @template T - The expected member type.
+     * @param {...string} keys - The keys of the sets to intersect.
+     * @returns {Promise<T[]>} A list of members that are in all of the given sets.
+     * @example
+     * const commonTags = await facade.sinter<string>('tags:post1', 'tags:post2');
+     */
     async sinter<T = string>(...keys: string[]): Promise<T[]> {
         const validKeys = filter(keys, validateKey);
 
@@ -1504,18 +1768,44 @@ export class RedisFacade {
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
+    /**
+     * Check if a member exists in a set.
+     * @param {string} key - The set key.
+     * @param {unknown} member - The member to check.
+     * @returns {Promise<boolean>} True if the member is in the set, false otherwise.
+     * @example
+     * const isMember = await facade.sismember('admins', 'user:123');
+     */
     async sismember(key: string, member: unknown): Promise<boolean> {
         const result = await (this.client as Redis).sismember(this.buildKey(key), safeToStringValue(member));
 
         return result === 1;
     }
 
+    /**
+     * Get all the members in a set.
+     * @template T - The expected member type.
+     * @param {string} key - The set key.
+     * @returns {Promise<T[]>} A list of all members in the set.
+     * @example
+     * const allTags = await facade.smembers<string>('tags');
+     */
     async smembers<T = string>(key: string): Promise<T[]> {
         const members = await (this.client as Redis).smembers(this.buildKey(key));
 
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
+    /**
+     * Remove and return one or more random members from a set.
+     * @template T - The expected member type.
+     * @param {string} key - The set key.
+     * @param {number} [count] - The number of members to pop.
+     * @returns {Promise<T | T[] | null>} The popped member(s), or null if the set is empty.
+     * @example
+     * const randomTag = await facade.spop<string>('tags');
+     * const randomTags = await facade.spop<string>('tags', 3);
+     */
     async spop<T = string>(key: string, count?: number): Promise<null | T | T[]> {
         const prefixedKey = this.buildKey(key);
 
@@ -1530,6 +1820,16 @@ export class RedisFacade {
         return member ? safeTryParseJson<T>(member) : null;
     }
 
+    /**
+     * Get one or more random members from a set without removing them.
+     * @template T - The expected member type.
+     * @param {string} key - The set key.
+     * @param {number} [count] - The number of members to return.
+     * @returns {Promise<T | T[] | null>} The random member(s), or null if the set is empty.
+     * @example
+     * const randomTag = await facade.srandmember<string>('tags');
+     * const randomTags = await facade.srandmember<string>('tags', 3);
+     */
     async srandmember<T = string>(key: string, count?: number): Promise<null | T | T[]> {
         const prefixedKey = this.buildKey(key);
 
@@ -1544,6 +1844,14 @@ export class RedisFacade {
         return member ? safeTryParseJson<T>(member) : null;
     }
 
+    /**
+     * Remove one or more members from a set.
+     * @param {string} key - The set key.
+     * @param {...unknown} members - The members to remove.
+     * @returns {Promise<number>} The number of members that were removed.
+     * @example
+     * await facade.srem('tags', 'obsolete_tag');
+     */
     async srem(key: string, ...members: unknown[]): Promise<number> {
         if (isEmpty(members)) return 0;
 
@@ -1552,6 +1860,14 @@ export class RedisFacade {
         return (this.client as Redis).srem(this.buildKey(key), ...stringMembers);
     }
 
+    /**
+     * Get the union of multiple sets.
+     * @template T - The expected member type.
+     * @param {...string} keys - The keys of the sets to union.
+     * @returns {Promise<T[]>} A list of all members that are in any of the given sets.
+     * @example
+     * const allUserTags = await facade.sunion<string>('user:1:tags', 'user:2:tags');
+     */
     async sunion<T = string>(...keys: string[]): Promise<T[]> {
         const validKeys = filter(keys, validateKey);
 
@@ -1567,9 +1883,9 @@ export class RedisFacade {
 
     /**
      * Add members with scores to a Redis sorted set.
-     * @param {string} key - Sorted set key
-     * @param {...Array<number | string>} scoreMembers - Alternating scores and members
-     * @returns {Promise<number>} Number of new members added
+     * @param {string} key - Sorted set key.
+     * @param {...Array<number | string>} scoreMembers - Alternating scores and members.
+     * @returns {Promise<number>} Number of new members added.
      * @throws {Error} If score-member pairs are not properly provided
      * @example
      * const added = await facade.zadd('leaderboard', 100, 'player1', 95, 'player2');
@@ -1593,9 +1909,9 @@ export class RedisFacade {
 
     /**
      * Add members with scores to a Redis sorted set using object format.
-     * @param {string} key - Sorted set key
-     * @param {Array<{ member: unknown; score: number }>} members - Array of member objects with scores
-     * @returns {Promise<number>} Number of new members added
+     * @param {string} key - Sorted set key.
+     * @param {Array<{ member: unknown; score: number }>} members - Array of member objects with scores.
+     * @returns {Promise<number>} Number of new members added.
      * @example
      * const added = await facade.zaddObject('leaderboard', [
      *   { member: 'player1', score: 100 },
@@ -1616,16 +1932,44 @@ export class RedisFacade {
         return (this.client as Redis).zadd(this.buildKey(key), ...scoreMembers);
     }
 
+    /**
+     * Get the number of members in a sorted set.
+     * @param {string} key - The sorted set key.
+     * @returns {Promise<number>} The number of members in the sorted set.
+     * @example
+     * const playerCount = await facade.zcard('leaderboard');
+     */
     async zcard(key: string): Promise<number> {
         return (this.client as Redis).zcard(this.buildKey(key));
     }
 
+    /**
+     * Increment the score of a member in a sorted set.
+     * @param {string} key - The sorted set key.
+     * @param {number} increment - The amount to increment the score by.
+     * @param {unknown} member - The member whose score to increment.
+     * @returns {Promise<string>} The new score of the member as a string.
+     * @example
+     * const newScore = await facade.zincrby('leaderboard', 10, 'player1');
+     */
     async zincrby(key: string, increment: number, member: unknown): Promise<string> {
         const safeIncrement = safeParseNumber(increment, 0);
 
         return (this.client as Redis).zincrby(this.buildKey(key), safeIncrement, safeToStringValue(member));
     }
 
+    /**
+     * Get a range of members in a sorted set, by index.
+     * @template T - The expected member type.
+     * @param {string} key - The sorted set key.
+     * @param {number} start - The start index.
+     * @param {number} stop - The stop index.
+     * @param {boolean} [withScores=false] - Whether to return scores along with members.
+     * @returns {Promise<T[] | Array<{ member: T; score: number }>>} A list of members, or a list of member-score objects.
+     * @example
+     * const top10 = await facade.zrange<string>('leaderboard', 0, 9);
+     * const top10WithScores = await facade.zrange<string>('leaderboard', 0, 9, true);
+     */
     async zrange<T = string>(
         key: string,
         start: number,
@@ -1655,6 +1999,22 @@ export class RedisFacade {
         return map(members, (m) => safeTryParseJson<T>(m) as T);
     }
 
+    /**
+     * Get a range of members in a sorted set, by score.
+     * @template T - The expected member type.
+     * @param {string} key - The sorted set key.
+     * @param {number | string} min - The minimum score.
+     * @param {number | string} max - The maximum score.
+     * @param {object} [options] - Optional parameters.
+     * @param {boolean} [options.withScores] - Whether to return scores along with members.
+     * @param {object} [options.limit] - Limit the number of returned members.
+     * @param {number} [options.limit.offset] - The offset.
+     * @param {number} [options.limit.count] - The count.
+     * @returns {Promise<T[] | Array<{ member: T; score: number }>>} A list of members, or a list of member-score objects.
+     * @example
+     * const highScores = await facade.zrangebyscore<string>('leaderboard', 90, 100);
+     * const top5WithScores = await facade.zrangebyscore<string>('leaderboard', '-inf', '+inf', { withScores: true, limit: { offset: 0, count: 5 } });
+     */
     async zrangebyscore<T = string>(
         key: string,
         min: number | string,
@@ -1695,10 +2055,26 @@ export class RedisFacade {
         return map(result, (m) => safeTryParseJson<T>(m) as T);
     }
 
+    /**
+     * Get the rank of a member in a sorted set (0-based).
+     * @param {string} key - The sorted set key.
+     * @param {unknown} member - The member to get the rank of.
+     * @returns {Promise<number | null>} The rank of the member, or null if the member is not in the set.
+     * @example
+     * const rank = await facade.zrank('leaderboard', 'player1');
+     */
     async zrank(key: string, member: unknown): Promise<null | number> {
         return (this.client as Redis).zrank(this.buildKey(key), safeToStringValue(member));
     }
 
+    /**
+     * Remove one or more members from a sorted set.
+     * @param {string} key - The sorted set key.
+     * @param {...unknown} members - The members to remove.
+     * @returns {Promise<number>} The number of members removed.
+     * @example
+     * await facade.zrem('leaderboard', 'player_to_remove');
+     */
     async zrem(key: string, ...members: unknown[]): Promise<number> {
         if (isEmpty(members)) return 0;
 
@@ -1707,10 +2083,26 @@ export class RedisFacade {
         return (this.client as Redis).zrem(this.buildKey(key), ...stringMembers);
     }
 
+    /**
+     * Get the rank of a member in a sorted set, with scores ordered from high to low (0-based).
+     * @param {string} key - The sorted set key.
+     * @param {unknown} member - The member to get the rank of.
+     * @returns {Promise<number | null>} The rank of the member, or null if the member is not in the set.
+     * @example
+     * const rank = await facade.zrevrank('leaderboard', 'player1');
+     */
     async zrevrank(key: string, member: unknown): Promise<null | number> {
         return (this.client as Redis).zrevrank(this.buildKey(key), safeToStringValue(member));
     }
 
+    /**
+     * Get the score of a member in a sorted set.
+     * @param {string} key - The sorted set key.
+     * @param {unknown} member - The member to get the score of.
+     * @returns {Promise<number | null>} The score of the member, or null if the member is not in the set.
+     * @example
+     * const score = await facade.zscore('leaderboard', 'player1');
+     */
     async zscore(key: string, member: unknown): Promise<null | number> {
         const score = await (this.client as Redis).zscore(this.buildKey(key), safeToStringValue(member));
 
@@ -1719,6 +2111,15 @@ export class RedisFacade {
 
     // ========== PUB/SUB OPERATIONS WITH LODASH ==========
 
+    /**
+     * Post a message to a channel.
+     * @param {string} channel - The channel to publish to.
+     * @param {string} message - The message to publish.
+     * @returns {Promise<number>} The number of clients that received the message.
+     * @throws {Error} If message is not a string.
+     * @example
+     * await facade.publish('news', 'A new article has been published!');
+     */
     async publish(channel: string, message: string): Promise<number> {
         if (!isString(message)) {
             throw new Error('Message must be a string');
@@ -1727,6 +2128,16 @@ export class RedisFacade {
         return (this.client as Redis).publish(this.buildKey(channel), message);
     }
 
+    /**
+     * Post multiple messages to channels in a batch.
+     * @param {Array<{ channel: string; data: unknown }>} messages - An array of messages to publish.
+     * @returns {Promise<number[]>} An array with the number of clients that received each message.
+     * @example
+     * await facade.publishBatch([
+     *   { channel: 'news', data: { title: '...' } },
+     *   { channel: 'updates', data: { version: '1.1' } }
+     * ]);
+     */
     async publishBatch(messages: Array<{ channel: string; data: unknown }>): Promise<number[]> {
         if (!isArray(messages) || isEmpty(messages)) return [];
 
@@ -1751,6 +2162,15 @@ export class RedisFacade {
         return map(results, ([, result]) => safeParseInteger(result, 0));
     }
 
+    /**
+     * Post a JSON message to a channel.
+     * @param {string} channel - The channel to publish to.
+     * @param {unknown} data - The data to stringify and publish.
+     * @returns {Promise<number>} The number of clients that received the message.
+     * @throws {Error} If the data cannot be stringified.
+     * @example
+     * await facade.publishJson('events', { type: 'user_signup', userId: 123 });
+     */
     async publishJson(channel: string, data: unknown): Promise<number> {
         try {
             const payload = JSON.stringify(data);
@@ -1765,9 +2185,9 @@ export class RedisFacade {
 
     /**
      * Acquire a distributed lock with automatic expiration.
-     * @param {string} key - Lock key to acquire
-     * @param {number} ttlMs - Lock TTL in milliseconds
-     * @returns {Promise<LockResult>} Lock result with release function if successful
+     * @param {string} key - Lock key to acquire.
+     * @param {number} ttlMs - Lock TTL in milliseconds.
+     * @returns {Promise<LockResult>} Lock result with release function if successful.
      * @throws {Error} If Redis operation fails
      * @example
      * const lock = await facade.acquireLock('order:123', 30000);
@@ -1825,6 +2245,16 @@ export class RedisFacade {
         }, 'acquire_lock');
     }
 
+    /**
+     * Acquire a distributed lock with automatic retries and exponential backoff.
+     * @param {string} key - Lock key to acquire.
+     * @param {number} ttlMs - Lock TTL in milliseconds.
+     * @param {number} [maxRetries=this.config.maxRetries] - Maximum number of retries.
+     * @param {number} [retryDelayMs=this.config.retryDelay] - Initial delay between retries.
+     * @returns {Promise<LockResult>} Lock result with release function if successful.
+     * @example
+     * const lock = await facade.acquireLockWithRetry('order:123', 30000, 5, 100);
+     */
     async acquireLockWithRetry(
         key: string,
         ttlMs: number,
@@ -1849,6 +2279,15 @@ export class RedisFacade {
         return { error: 'Failed to acquire lock after retries', ok: false };
     }
 
+    /**
+     * Extend the TTL of an existing lock.
+     * @param {string} key - The lock key.
+     * @param {string} token - The lock token returned by `acquireLock`.
+     * @param {number} additionalTtlMs - Additional TTL in milliseconds to add.
+     * @returns {Promise<boolean>} True if the lock was extended, false otherwise (e.g., if the lock expired or token is wrong).
+     * @example
+     * await facade.extendLock('order:123', lock.token, 15000);
+     */
     async extendLock(key: string, token: string, additionalTtlMs: number): Promise<boolean> {
         const safeAdditionalTtl = safeParseInteger(additionalTtlMs, 30000);
         const prefixedKey = this.buildKey(`lock:${key}`);
@@ -1869,13 +2308,13 @@ export class RedisFacade {
     /**
      * Execute a function with distributed lock protection.
      * @template T - Return type of the function
-     * @param {string} key - Lock key to acquire
-     * @param {number} ttlMs - Lock TTL in milliseconds
-     * @param {() => Promise<T>} fn - Function to execute with lock protection
-     * @param {object} [options] - Optional retry configuration
-     * @param {number} [options.maxRetries] - Maximum number of lock acquisition retries
-     * @param {number} [options.retryDelayMs] - Delay between retries in milliseconds
-     * @returns {Promise<T>} Result of the executed function
+     * @param {string} key - Lock key to acquire.
+     * @param {number} ttlMs - Lock TTL in milliseconds.
+     * @param {() => Promise<T>} fn - Function to execute with lock protection.
+     * @param {object} [options] - Optional retry configuration.
+     * @param {number} [options.maxRetries] - Maximum number of lock acquisition retries.
+     * @param {number} [options.retryDelayMs] - Delay between retries in milliseconds.
+     * @returns {Promise<T>} Result of the executed function.
      * @throws {Error} If lock cannot be acquired or function execution fails
      * @example
      * const result = await facade.withLock('order:123', 30000, async () => {
@@ -1914,10 +2353,10 @@ export class RedisFacade {
 
     /**
      * Apply fixed window rate limiting.
-     * @param {string} key - Rate limit key (e.g., user ID or IP)
-     * @param {number} limit - Maximum number of requests allowed in window
-     * @param {number} windowMs - Time window in milliseconds
-     * @returns {Promise<RateLimitResult>} Rate limit result with remaining quota
+     * @param {string} key - Rate limit key (e.g., user ID or IP).
+     * @param {number} limit - Maximum number of requests allowed in window.
+     * @param {number} windowMs - Time window in milliseconds.
+     * @returns {Promise<RateLimitResult>} Rate limit result with remaining quota.
      * @example
      * const result = await facade.rateLimit(`user:${userId}`, 100, 60000);
      * if (!result.allowed) {
@@ -1953,6 +2392,16 @@ export class RedisFacade {
         }
     }
 
+    /**
+     * Apply fixed window rate limiting for multiple keys.
+     * @param {Array<{ key: string; limit: number; windowMs: number }>} requests - An array of rate limit requests.
+     * @returns {Promise<RateLimitResult[]>} An array of rate limit results.
+     * @example
+     * const results = await facade.rateLimitMultiple([
+     *   { key: 'ip:1.2.3.4', limit: 100, windowMs: 60000 },
+     *   { key: 'user:123', limit: 10, windowMs: 60000 }
+     * ]);
+     */
     async rateLimitMultiple(
         requests: Array<{ key: string; limit: number; windowMs: number }>,
     ): Promise<RateLimitResult[]> {
@@ -1963,6 +2412,18 @@ export class RedisFacade {
         return Promise.all(map(validRequests, ({ key, limit, windowMs }) => this.rateLimit(key, limit, windowMs)));
     }
 
+    /**
+     * Apply sliding window rate limiting.
+     * @param {string} key - Rate limit key (e.g., user ID or IP).
+     * @param {number} limit - Maximum number of requests allowed in window.
+     * @param {number} windowMs - Time window in milliseconds.
+     * @returns {Promise<RateLimitResult>} Rate limit result with remaining quota.
+     * @example
+     * const result = await facade.slidingWindowRateLimit(`user:${userId}`, 100, 60000);
+     * if (!result.allowed) {
+     *   throw new Error('Rate limit exceeded');
+     * }
+     */
     async slidingWindowRateLimit(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
         const safeLimit = safeParseInteger(limit, 100);
         const safeWindow = safeParseInteger(windowMs, 60000);
@@ -2010,7 +2471,7 @@ export class RedisFacade {
 
     /**
      * Get comprehensive cache statistics including hit rate and memory usage.
-     * @returns {Promise<CacheStats & { connectionHealth: ConnectionHealth }>} Cache statistics with connection health
+     * @returns {Promise<CacheStats & { connectionHealth: ConnectionHealth }>} Cache statistics with connection health.
      * @example
      * const stats = await facade.getCacheStats();
      * console.log(`Hit rate: ${stats.hitRate}%, Memory: ${stats.memoryUsage}`);
@@ -2046,8 +2507,8 @@ export class RedisFacade {
 
     /**
      * Get detailed statistics for keys matching a pattern.
-     * @param {string} [pattern='*'] - Pattern to match keys
-     * @returns {Promise<Array<{ key: string; size?: number; ttl: number; type: string }>>} Array of key statistics
+     * @param {string} [pattern='*'] - Pattern to match keys.
+     * @returns {Promise<Array<{ key: string; size?: number; ttl: number; type: string }>>} Array of key statistics.
      * @example
      * const keyStats = await facade.getKeyStats('user:*');
      * keyStats.forEach(stat => console.log(`${stat.key}: ${stat.type}, TTL: ${stat.ttl}`));
@@ -2084,6 +2545,12 @@ export class RedisFacade {
         );
     }
 
+    /**
+     * Get in-memory statistics for the facade instance (hits, misses, errors).
+     * @returns {{hits: number, misses: number, errors: number, operations: number, hitRate: number, errorRate: number}} Local stats object.
+     * @example
+     * const localStats = facade.getLocalStats();
+     */
     getLocalStats() {
         const total = this.stats.operations;
 
@@ -2097,6 +2564,12 @@ export class RedisFacade {
         };
     }
 
+    /**
+     * Reset the in-memory statistics for the facade instance.
+     * @returns {void}
+     * @example
+     * facade.resetStats();
+     */
     resetStats(): void {
         this.stats.hits = 0;
         this.stats.misses = 0;
@@ -2108,7 +2581,7 @@ export class RedisFacade {
 
     /**
      * Get the number of keys in the current database.
-     * @returns {Promise<number>} Number of keys in database
+     * @returns {Promise<number>} Number of keys in database.
      * @example
      * const keyCount = await facade.dbsize();
      */
@@ -2118,9 +2591,9 @@ export class RedisFacade {
 
     /**
      * Execute a Lua script on Redis server.
-     * @param {string} script - Lua script to execute
-     * @param {number} numKeys - Number of keys in the script
-     * @param {...Array<number | string>} args - Arguments for the script
+     * @param {string} script - Lua script to execute.
+     * @param {number} numKeys - Number of keys in the script.
+     * @param {...Array<number | string>} args - Arguments for the script.
      * @returns {Promise<unknown>} Result of script execution
      * @example
      * const result = await facade.eval('return ARGV[1]', 0, 'hello');
@@ -2133,7 +2606,7 @@ export class RedisFacade {
 
     /**
      * Flush all keys from the current database.
-     * @returns {Promise<'OK'>} OK response from Redis
+     * @returns {Promise<'OK'>} OK response from Redis.
      * @example
      * await facade.flushdb();
      */
@@ -2143,8 +2616,8 @@ export class RedisFacade {
 
     /**
      * Get Redis server information.
-     * @param {string} [section] - Optional info section to retrieve
-     * @returns {Promise<string>} Redis info string
+     * @param {string} [section] - Optional info section to retrieve.
+     * @returns {Promise<string>} Redis info string.
      * @example
      * const memoryInfo = await facade.info('memory');
      * const allInfo = await facade.info();
@@ -2157,7 +2630,7 @@ export class RedisFacade {
 
     /**
      * Create a multi command transaction.
-     * @returns {Multi} Redis multi command object
+     * @returns {Multi} Redis multi command object.
      * @example
      * const multi = facade.multi();
      * multi.set('key1', 'value1');
@@ -2170,7 +2643,7 @@ export class RedisFacade {
 
     /**
      * Ping the Redis server.
-     * @returns {Promise<string>} PONG response from Redis
+     * @returns {Promise<string>} PONG response from Redis.
      * @example
      * const response = await facade.ping(); // 'PONG'
      */
@@ -2180,7 +2653,7 @@ export class RedisFacade {
 
     /**
      * Create a pipeline for batching commands.
-     * @returns {Pipeline} Redis pipeline object
+     * @returns {Pipeline} Redis pipeline object.
      * @example
      * const pipeline = facade.pipeline();
      * pipeline.set('key1', 'value1');
@@ -2193,6 +2666,14 @@ export class RedisFacade {
 
     // ========== SERIALIZATION HELPERS WITH LODASH ==========
 
+    /**
+     * Get and decompress a value from Redis. (Demonstration)
+     * @template T - Expected return type.
+     * @param {string} key - The key to retrieve.
+     * @returns {Promise<T | null>} The decompressed value, or null if not found.
+     * @example
+     * const data = await facade.getDecompressed<MyObject>('compressed_data');
+     */
     async getDecompressed<T = unknown>(key: string): Promise<null | T> {
         // For demonstration - in real implementation you'd use decompression
         const result = await this.getJson<T>(key);
@@ -2200,6 +2681,16 @@ export class RedisFacade {
         return result ? cloneDeep(result) : null;
     }
 
+    /**
+     * Set multiple JSON values in Redis in bulk.
+     * @param {Array<{ key: string; value: unknown; options?: RedisSetOptions }>} items - An array of items to set.
+     * @returns {Promise<void>} A promise that resolves when all items are set.
+     * @example
+     * await facade.setBulkJson([
+     *   { key: 'user:1', value: { name: 'Alice' } },
+     *   { key: 'product:2', value: { name: 'Book' }, options: { ttlSeconds: 3600 } }
+     * ]);
+     */
     async setBulkJson(items: Array<{ key: string; options?: RedisSetOptions; value: unknown }>): Promise<void> {
         const validItems = filter(items, (item) => isPlainObject(item) && validateKey(get(item, 'key')));
 
@@ -2218,6 +2709,15 @@ export class RedisFacade {
         }
     }
 
+    /**
+     * Compress and set a value in Redis. (Demonstration)
+     * @param {string} key - The key to set.
+     * @param {unknown} value - The value to compress and set.
+     * @param {RedisSetOptions} [options] - Optional set options.
+     * @returns {Promise<string | null>} The result of the SET command.
+     * @example
+     * await facade.setCompressed('large_object', myLargeObject, { ttlSeconds: 60 });
+     */
     async setCompressed(key: string, value: unknown, options?: RedisSetOptions): Promise<null | string> {
         // For demonstration - in real implementation you'd use compression
         const clonedValue = cloneDeep(value);
@@ -2227,16 +2727,37 @@ export class RedisFacade {
 
     // ========== PATTERN MATCHING WITH LODASH ==========
 
+    /**
+     * Find all keys matching a pattern. Alias for `scanKeys`.
+     * @param {string} pattern - The pattern to match.
+     * @returns {Promise<string[]>} A list of keys matching the pattern.
+     * @example
+     * const keys = await facade.findKeysByPattern('session:*');
+     */
     async findKeysByPattern(pattern: string): Promise<string[]> {
         return this.scanKeys(pattern);
     }
 
+    /**
+     * Find all keys with a given prefix.
+     * @param {string} prefix - The prefix to search for.
+     * @returns {Promise<string[]>} A list of keys with the given prefix.
+     * @example
+     * const userKeys = await facade.getKeysByPrefix('user:');
+     */
     async getKeysByPrefix(prefix: string): Promise<string[]> {
         if (!isString(prefix) || isEmpty(prefix)) return [];
 
         return this.scanKeys(`${prefix}*`);
     }
 
+    /**
+     * Get keys matching a pattern along with their metadata (type, TTL, size).
+     * @param {string} [pattern='*'] - The pattern to match keys.
+     * @returns {Promise<Array<{ key: string; type: string; ttl: number; size: number }>>} A list of key metadata objects.
+     * @example
+     * const metadata = await facade.getKeysWithMetadata('user:*');
+     */
     async getKeysWithMetadata(pattern = '*'): Promise<
         Array<{
             key: string;
@@ -2280,10 +2801,24 @@ export class RedisFacade {
         );
     }
 
+    /**
+     * Delete all keys matching a pattern. Alias for `del`.
+     * @param {string} pattern - The pattern to match for deletion.
+     * @returns {Promise<number>} The number of keys deleted.
+     * @example
+     * const deletedCount = await facade.deleteKeysByPattern('temp:*');
+     */
     async deleteKeysByPattern(pattern: string): Promise<number> {
         return this.del(pattern);
     }
 
+    /**
+     * Group keys by matching patterns.
+     * @param {string[]} patterns - An array of patterns to match.
+     * @returns {Promise<Record<string, string[]>>} A dictionary mapping patterns to matching keys.
+     * @example
+     * const grouped = await facade.groupKeysByPattern(['user:*', 'session:*']);
+     */
     async groupKeysByPattern(patterns: string[]): Promise<Record<string, string[]>> {
         if (!isArray(patterns) || isEmpty(patterns)) return {};
 
@@ -2306,6 +2841,15 @@ export class RedisFacade {
 
     // ========== HEALTH CHECK WITH LODASH ==========
 
+    /**
+     * Perform a deep health check, testing multiple Redis commands and returning detailed status.
+     * @returns {Promise<object>} A detailed health check report.
+     * @example
+     * const report = await facade.deepHealthCheck();
+     * if (report.status === 'unhealthy') {
+     *   console.error('Redis is unhealthy:', report.checks);
+     * }
+     */
     async deepHealthCheck(): Promise<{
         checks: Record<string, { error?: string; latency: number; ok: boolean }>;
         circuitBreakerStatus: {
@@ -2410,9 +2954,10 @@ export class RedisFacade {
     /**
      * Perform detailed health check operation.
      * @param {string} checkName - Name of the health check
-     * @param {Record<string, { error?: string; latency: number; ok: boolean }>} checks - Object to store check results
-     * @param {() => Promise<void>} operation - Health check operation to perform
-     * @returns {Promise<void>} Promise that resolves when check is complete
+     * @param {Record<string, { error?: string; latency: number; ok: boolean }>} checks - Object to store check results.
+     * @param {() => Promise<void>} operation - Health check operation to perform.
+     * @returns {Promise<void>} Promise that resolves when check is complete.
+     * @private
      */
     private async performHealthCheck(
         checkName: string,
@@ -2438,6 +2983,20 @@ export class RedisFacade {
 
     // ========== ADVANCED CACHE PATTERNS ==========
 
+    /**
+     * Implements the Cache-Aside pattern.
+     * Tries to get a value from cache. If it's a miss, it loads from the source,
+     * caches it, and returns it. Can perform a background refresh if the data is stale.
+     * @template T - The type of data to cache.
+     * @param {string} key - The cache key.
+     * @param {() => Promise<T>} loader - The function to load data from the source on a cache miss.
+     * @param {object} options - Caching options.
+     * @param {number} options.ttlSeconds - The TTL for the cached item.
+     * @param {number} [options.refreshThreshold] - A value between 0 and 1. If the item's age exceeds `ttlSeconds * refreshThreshold`, a background refresh is triggered.
+     * @returns {Promise<T>} The data from the cache or the loader.
+     * @example
+     * const user = await facade.cacheAside('user:1', () => db.fetchUser(1), { ttlSeconds: 3600, refreshThreshold: 0.8 });
+     */
     async cacheAside<T>(
         key: string,
         loader: () => Promise<T>,
@@ -2479,6 +3038,18 @@ export class RedisFacade {
         return fresh;
     }
 
+    /**
+     * Implements the Write-Behind (or Write-Back) pattern.
+     * Writes data to the cache immediately and queues it for asynchronous writing to the backing store.
+     * @template T - The type of data to write.
+     * @param {string} key - The cache key.
+     * @param {T} value - The value to write.
+     * @param {(value: T) => Promise<void>} writer - The function to write data to the backing store.
+     * @param {RedisSetOptions} [options] - Optional cache set options.
+     * @returns {Promise<void>} A promise that resolves once the value is in the cache and queued for writing.
+     * @example
+     * await facade.writeBehind('user:1:profile', newProfile, (profile) => db.updateProfile(1, profile));
+     */
     async writeBehind<T>(
         key: string,
         value: T,
@@ -2497,6 +3068,18 @@ export class RedisFacade {
         writer(value).catch(console.error);
     }
 
+    /**
+     * Implements the Write-Through pattern.
+     * Writes data to the cache and the backing store simultaneously.
+     * @template T - The type of data to write.
+     * @param {string} key - The cache key.
+     * @param {T} value - The value to write.
+     * @param {(value: T) => Promise<void>} writer - The function to write data to the backing store.
+     * @param {RedisSetOptions} [options] - Optional cache set options.
+     * @returns {Promise<void>} A promise that resolves when the value has been written to both cache and the store.
+     * @example
+     * await facade.writeThrough('user:1:settings', newSettings, (settings) => db.updateSettings(1, settings));
+     */
     async writeThrough<T>(
         key: string,
         value: T,
@@ -2508,6 +3091,15 @@ export class RedisFacade {
 
     // ========== CONNECTION MANAGEMENT ==========
 
+    /**
+     * Get the current status of the circuit breaker.
+     * @returns {object} The circuit breaker status.
+     * @example
+     * const status = facade.getCircuitBreakerStatus();
+     * if (status.isOpen) {
+     *   console.warn(`Circuit breaker is open, next attempt at ${status.nextAttempt}`);
+     * }
+     */
     getCircuitBreakerStatus() {
         return {
             failures: this.circuitBreaker.failures,
@@ -2521,10 +3113,25 @@ export class RedisFacade {
         };
     }
 
+    /**
+     * Get the current connection health status.
+     * @returns {ConnectionHealth} The connection health object.
+     * @example
+     * const health = facade.getConnectionHealth();
+     * if (!health.isConnected) {
+     *   console.error('Redis is not connected.', health.lastError);
+     * }
+     */
     getConnectionHealth(): ConnectionHealth {
         return cloneDeep(this.connectionHealth);
     }
 
+    /**
+     * Manually reset the circuit breaker, closing it and allowing requests again.
+     * @returns {void}
+     * @example
+     * facade.resetCircuitBreaker();
+     */
     resetCircuitBreaker(): void {
         this.circuitBreaker.failures = 0;
         this.circuitBreaker.nextAttempt = 0;
@@ -2532,10 +3139,22 @@ export class RedisFacade {
 
     // ========== CONFIGURATION ACCESS ==========
 
+    /**
+     * Get the current configuration of the facade instance.
+     * @returns {RedisFacadeConfig} A copy of the facade configuration.
+     * @example
+     * const config = facade.getConfig();
+     */
     getConfig(): RedisFacadeConfig {
         return cloneDeep(this.config);
     }
 
+    /**
+     * Get the key prefix used by this facade instance.
+     * @returns {string} The key prefix.
+     * @example
+     * const prefix = facade.getKeyPrefix();
+     */
     getKeyPrefix(): string {
         return this.keyPrefix;
     }
