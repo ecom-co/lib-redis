@@ -1214,6 +1214,15 @@ export class RedisFacade {
         return result === 1;
     }
 
+    /**
+     * Get a field value from a Redis hash.
+     * @template T - Expected return type
+     * @param {string} key - Hash key
+     * @param {string} field - Field name to retrieve
+     * @returns {Promise<T | null>} Field value or null if not found
+     * @example
+     * const name = await facade.hget<string>('user:123', 'name');
+     */
     async hget<T = string>(key: string, field: string): Promise<null | T> {
         if (!isString(field) || isEmpty(field)) return null;
 
@@ -1222,6 +1231,14 @@ export class RedisFacade {
         return safeTryParseJson<T>(raw);
     }
 
+    /**
+     * Get all fields and values from a Redis hash.
+     * @template T - Expected return type (default: Record<string, string>)
+     * @param {string} key - Hash key
+     * @returns {Promise<T>} Object with all hash fields and values
+     * @example
+     * const user = await facade.hgetall<User>('user:123');
+     */
     async hgetall<T = Record<string, string>>(key: string): Promise<T> {
         const result = await (this.client as Redis).hgetall(this.buildKey(key));
 
@@ -1366,6 +1383,14 @@ export class RedisFacade {
         return safeTryParseJson<T>(raw);
     }
 
+    /**
+     * Push values to the left (beginning) of a Redis list.
+     * @param {string} key - List key
+     * @param {...unknown} values - Values to push to the list
+     * @returns {Promise<number>} New length of the list
+     * @example
+     * const length = await facade.lpush('tasks', 'task1', 'task2', 'task3');
+     */
     async lpush(key: string, ...values: unknown[]): Promise<number> {
         if (isEmpty(values)) return 0;
 
@@ -1374,6 +1399,16 @@ export class RedisFacade {
         return (this.client as Redis).lpush(this.buildKey(key), ...stringValues);
     }
 
+    /**
+     * Get a range of elements from a Redis list.
+     * @template T - Expected element type
+     * @param {string} key - List key
+     * @param {number} start - Start index (0-based)
+     * @param {number} stop - Stop index (-1 for end)
+     * @returns {Promise<T[]>} Array of list elements in the range
+     * @example
+     * const tasks = await facade.lrange<string>('tasks', 0, 9); // First 10 elements
+     */
     async lrange<T = string>(key: string, start: number, stop: number): Promise<T[]> {
         const safeStart = safeParseInteger(start, 0);
         const safeStop = safeParseInteger(stop, -1);
@@ -1420,6 +1455,14 @@ export class RedisFacade {
 
     // ========== SET OPERATIONS WITH LODASH ==========
 
+    /**
+     * Add members to a Redis set.
+     * @param {string} key - Set key
+     * @param {...unknown} members - Members to add to the set
+     * @returns {Promise<number>} Number of new members added
+     * @example
+     * const added = await facade.sadd('tags', 'javascript', 'nodejs', 'redis');
+     */
     async sadd(key: string, ...members: unknown[]): Promise<number> {
         if (isEmpty(members)) return 0;
 
@@ -1428,6 +1471,13 @@ export class RedisFacade {
         return (this.client as Redis).sadd(this.buildKey(key), ...stringMembers);
     }
 
+    /**
+     * Get the number of members in a Redis set.
+     * @param {string} key - Set key
+     * @returns {Promise<number>} Number of members in the set
+     * @example
+     * const count = await facade.scard('tags');
+     */
     async scard(key: string): Promise<number> {
         return (this.client as Redis).scard(this.buildKey(key));
     }
@@ -1515,6 +1565,15 @@ export class RedisFacade {
 
     // ========== SORTED SET OPERATIONS WITH LODASH ==========
 
+    /**
+     * Add members with scores to a Redis sorted set.
+     * @param {string} key - Sorted set key
+     * @param {...Array<number | string>} scoreMembers - Alternating scores and members
+     * @returns {Promise<number>} Number of new members added
+     * @throws {Error} If score-member pairs are not properly provided
+     * @example
+     * const added = await facade.zadd('leaderboard', 100, 'player1', 95, 'player2');
+     */
     async zadd(key: string, ...scoreMembers: Array<number | string>): Promise<number> {
         if (isEmpty(scoreMembers) || scoreMembers.length % 2 !== 0) {
             throw new Error('Score-member pairs must be provided');
@@ -1532,6 +1591,17 @@ export class RedisFacade {
         return (this.client as Redis).zadd(this.buildKey(key), ...safePairs);
     }
 
+    /**
+     * Add members with scores to a Redis sorted set using object format.
+     * @param {string} key - Sorted set key
+     * @param {Array<{ member: unknown; score: number }>} members - Array of member objects with scores
+     * @returns {Promise<number>} Number of new members added
+     * @example
+     * const added = await facade.zaddObject('leaderboard', [
+     *   { member: 'player1', score: 100 },
+     *   { member: 'player2', score: 95 }
+     * ]);
+     */
     async zaddObject(key: string, members: Array<{ member: unknown; score: number }>): Promise<number> {
         if (!isArray(members) || isEmpty(members)) return 0;
 
