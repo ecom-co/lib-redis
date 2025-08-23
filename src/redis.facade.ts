@@ -627,6 +627,16 @@ export class RedisFacade {
         }, 'set');
     }
 
+    /**
+     * Set a JSON value in Redis with optional expiration options.
+     * @param {string} key - Redis key to set
+     * @param {unknown} value - Value to JSON.stringify and store
+     * @param {RedisSetOptions} [options] - Optional set options (TTL, mode, etc.)
+     * @returns {Promise<string | null>} Redis SET command result
+     * @throws {Error} If JSON stringification fails or Redis operation fails
+     * @example
+     * await facade.setJson('user:123', { id: 123, name: 'John' }, { ttlSeconds: 3600 });
+     */
     async setJson(key: string, value: unknown, options?: RedisSetOptions): Promise<null | string> {
         try {
             const payload = JSON.stringify(value);
@@ -639,6 +649,17 @@ export class RedisFacade {
 
     // ========== CACHE OPERATIONS WITH LODASH ==========
 
+    /**
+     * Get value from cache or execute loader function if not found.
+     * @template T - Expected return type
+     * @param {string} key - Cache key to check
+     * @param {number} ttlSeconds - TTL in seconds for cached value
+     * @param {() => Promise<T>} loader - Function to load value if not cached
+     * @returns {Promise<T>} Cached value or result from loader function
+     * @throws {Error} If loader is not a function or operations fail
+     * @example
+     * const user = await facade.getOrSet('user:123', 3600, () => fetchUserFromDB(123));
+     */
     async getOrSet<T>(key: string, ttlSeconds: number, loader: () => Promise<T>): Promise<T> {
         if (!isFunction(loader)) {
             throw new Error('Loader must be a function');
@@ -655,6 +676,17 @@ export class RedisFacade {
         return fresh;
     }
 
+    /**
+     * Get value from cache or execute loader function with custom options.
+     * @template T - Expected return type
+     * @param {string} key - Cache key to check
+     * @param {() => Promise<T>} loader - Function to load value if not cached
+     * @param {RedisSetOptions} options - Set options for cached value
+     * @returns {Promise<T>} Cached value or result from loader function
+     * @throws {Error} If loader is not a function or operations fail
+     * @example
+     * const data = await facade.getOrSetWithOptions('data:456', loadData, { pxMs: 5000 });
+     */
     async getOrSetWithOptions<T>(key: string, loader: () => Promise<T>, options: RedisSetOptions): Promise<T> {
         if (!isFunction(loader)) {
             throw new Error('Loader must be a function');
@@ -671,6 +703,21 @@ export class RedisFacade {
         return fresh;
     }
 
+    /**
+     * Create a memoized function that caches results in Redis.
+     * @template TArgs - Function arguments tuple type
+     * @template TReturn - Function return type
+     * @param {(...args: TArgs) => Promise<TReturn>} fn - Function to memoize
+     * @param {(...args: TArgs) => string} keyGenerator - Function to generate cache keys from arguments
+     * @param {number} [ttlSeconds=3600] - TTL in seconds for cached results
+     * @returns {(...args: TArgs) => Promise<TReturn>} Memoized function
+     * @example
+     * const memoizedFetch = facade.memoize(
+     *   (id: number) => fetchUser(id),
+     *   (id: number) => `user:${id}`,
+     *   3600
+     * );
+     */
     memoize<TArgs extends unknown[], TReturn>(
         fn: (...args: TArgs) => Promise<TReturn>,
         keyGenerator: (...args: TArgs) => string,
@@ -685,6 +732,17 @@ export class RedisFacade {
         }, resolver);
     }
 
+    /**
+     * Refresh cache with new value from loader function.
+     * @template T - Expected return type
+     * @param {string} key - Cache key to refresh
+     * @param {() => Promise<T>} loader - Function to load fresh value
+     * @param {RedisSetOptions} [options] - Optional set options for cached value
+     * @returns {Promise<T>} Fresh value from loader function
+     * @throws {Error} If loader is not a function or operations fail
+     * @example
+     * const freshData = await facade.refresh('data:123', () => fetchDataFromAPI(123));
+     */
     async refresh<T>(key: string, loader: () => Promise<T>, options?: RedisSetOptions): Promise<T> {
         if (!isFunction(loader)) {
             throw new Error('Loader must be a function');
@@ -699,6 +757,17 @@ export class RedisFacade {
 
     // ========== BATCH OPERATIONS WITH LODASH ==========
 
+    /**
+     * Execute multiple Redis operations in batch.
+     * @param {BatchOperation[]} operations - Array of batch operations to execute
+     * @returns {Promise<unknown[]>} Array of results from batch operations
+     * @throws {Error} If operations array is invalid or batch execution fails
+     * @example
+     * const results = await facade.executeBatch([
+     *   { operation: 'set', key: 'key1', value: 'value1' },
+     *   { operation: 'get', key: 'key2' }
+     * ]);
+     */
     async executeBatch(operations: BatchOperation[]): Promise<unknown[]> {
         if (!isArray(operations) || isEmpty(operations)) return [];
 
@@ -742,6 +811,16 @@ export class RedisFacade {
         return map(results, ([_err, result]) => (isNil(_err) ? result : null));
     }
 
+    /**
+     * Get multiple values from Redis by keys.
+     * @template T - Expected return type for each value
+     * @param {string[]} keys - Array of Redis keys to retrieve
+     * @returns {Promise<Array<T | null>>} Array of parsed values or null for missing keys
+     * @throws {Error} If Redis operation fails
+     * @example
+     * const values = await facade.mget<string>(['key1', 'key2', 'key3']);
+     * const users = await facade.mget<User>(['user:1', 'user:2']);
+     */
     async mget<T = string>(keys: string[]): Promise<Array<null | T>> {
         return this.withCircuitBreaker(async () => {
             try {
@@ -781,6 +860,17 @@ export class RedisFacade {
         }, 'mget');
     }
 
+    /**
+     * Set multiple key-value pairs in Redis with optional individual options.
+     * @param {Array<{ key: string; value: unknown; options?: RedisSetOptions }>} keyValuePairs - Array of key-value pairs to set
+     * @returns {Promise<void>} Promise that resolves when all values are set
+     * @throws {Error} If Redis operations fail
+     * @example
+     * await facade.mset([
+     *   { key: 'user:1', value: { id: 1, name: 'John' } },
+     *   { key: 'counter', value: 42, options: { ttlSeconds: 3600 } }
+     * ]);
+     */
     async mset(keyValuePairs: Array<{ key: string; options?: RedisSetOptions; value: unknown }>): Promise<void> {
         return this.withCircuitBreaker(async () => {
             try {
@@ -830,12 +920,28 @@ export class RedisFacade {
 
     // ========== COUNTER OPERATIONS WITH LODASH ==========
 
+    /**
+     * Get counter value from Redis.
+     * @param {string} key - Counter key to retrieve
+     * @returns {Promise<number>} Counter value as integer, 0 if not found
+     * @example
+     * const count = await facade.getCounter('page:views');
+     */
     async getCounter(key: string): Promise<number> {
         const value = await this.get<string>(key);
 
         return safeParseInteger(value, 0);
     }
 
+    /**
+     * Set counter value in Redis with optional TTL.
+     * @param {string} key - Counter key to set
+     * @param {number} value - Counter value to set
+     * @param {number} [ttlSeconds] - Optional TTL in seconds
+     * @returns {Promise<void>} Promise that resolves when counter is set
+     * @example
+     * await facade.setCounter('page:views', 100, 3600);
+     */
     async setCounter(key: string, value: number, ttlSeconds?: number): Promise<void> {
         const safeValue = safeParseInteger(value, 0);
         const options = isNumber(ttlSeconds) ? { ttlSeconds: safeParseInteger(ttlSeconds) } : undefined;
@@ -843,6 +949,14 @@ export class RedisFacade {
         await this.set(key, safeValue, options);
     }
 
+    /**
+     * Decrement counter by specified amount.
+     * @param {string} key - Counter key to decrement
+     * @param {number} [amount=1] - Amount to decrement by
+     * @returns {Promise<number>} New counter value after decrement
+     * @example
+     * const newCount = await facade.decr('inventory:item1', 5);
+     */
     async decr(key: string, amount = 1): Promise<number> {
         const safeAmount = safeParseInteger(amount, 1);
         const prefixedKey = this.buildKey(key);
@@ -852,6 +966,14 @@ export class RedisFacade {
             : (this.client as Redis).decrby(prefixedKey, safeAmount);
     }
 
+    /**
+     * Increment counter by specified amount.
+     * @param {string} key - Counter key to increment
+     * @param {number} [amount=1] - Amount to increment by
+     * @returns {Promise<number>} New counter value after increment
+     * @example
+     * const newCount = await facade.incr('page:views', 1);
+     */
     async incr(key: string, amount = 1): Promise<number> {
         const safeAmount = safeParseInteger(amount, 1);
         const prefixedKey = this.buildKey(key);
@@ -861,12 +983,30 @@ export class RedisFacade {
             : (this.client as Redis).incrby(prefixedKey, safeAmount);
     }
 
+    /**
+     * Increment float counter by specified amount.
+     * @param {string} key - Counter key to increment
+     * @param {number} amount - Float amount to increment by
+     * @returns {Promise<string>} New counter value as string after increment
+     * @example
+     * const newValue = await facade.incrFloat('temperature:avg', 1.5);
+     */
     async incrFloat(key: string, amount: number): Promise<string> {
         const safeAmount = safeParseNumber(amount, 0);
 
         return (this.client as Redis).incrbyfloat(this.buildKey(key), safeAmount);
     }
 
+    /**
+     * Increment multiple counters in a single pipeline operation.
+     * @param {Array<{ key: string; amount?: number }>} counters - Array of counters to increment
+     * @returns {Promise<number[]>} Array of new counter values after increment
+     * @example
+     * const results = await facade.multiIncr([
+     *   { key: 'counter1', amount: 5 },
+     *   { key: 'counter2', amount: 10 }
+     * ]);
+     */
     async multiIncr(counters: Array<{ amount?: number; key: string }>): Promise<number[]> {
         if (!isArray(counters) || isEmpty(counters)) return [];
 
@@ -892,6 +1032,13 @@ export class RedisFacade {
 
     // ========== KEY MANAGEMENT WITH LODASH ==========
 
+    /**
+     * Check if one or more keys exist in Redis.
+     * @param {...string} keys - Keys to check for existence
+     * @returns {Promise<number>} Number of keys that exist
+     * @example
+     * const count = await facade.exists('user:1', 'user:2', 'user:3');
+     */
     async exists(...keys: string[]): Promise<number> {
         const validKeys = filter(keys, validateKey);
 
@@ -902,6 +1049,15 @@ export class RedisFacade {
         return (this.client as Redis).exists(...prefixedKeys);
     }
 
+    /**
+     * Delete a key or keys matching a pattern.
+     * @param {string} keyOrPattern - Key to delete or pattern to match (with *)
+     * @returns {Promise<number>} Number of keys deleted
+     * @throws {Error} If Redis operation fails
+     * @example
+     * await facade.del('user:123');
+     * await facade.del('temp:*');
+     */
     async del(keyOrPattern: string): Promise<number> {
         return this.withCircuitBreaker(async () => {
             try {
@@ -1537,6 +1693,22 @@ export class RedisFacade {
 
     // ========== ADVANCED LOCKING WITH LODASH ==========
 
+    /**
+     * Acquire a distributed lock with automatic expiration.
+     * @param {string} key - Lock key to acquire
+     * @param {number} ttlMs - Lock TTL in milliseconds
+     * @returns {Promise<LockResult>} Lock result with release function if successful
+     * @throws {Error} If Redis operation fails
+     * @example
+     * const lock = await facade.acquireLock('order:123', 30000);
+     * if (lock.ok) {
+     *   try {
+     *     // Critical section
+     *   } finally {
+     *     await lock.release();
+     *   }
+     * }
+     */
     async acquireLock(key: string, ttlMs: number): Promise<LockResult> {
         return this.withCircuitBreaker(async () => {
             const safeTtl = safeParseInteger(ttlMs, this.config.lockDefaultTtl);
@@ -1624,6 +1796,23 @@ export class RedisFacade {
         return result === 1;
     }
 
+    /**
+     * Execute a function with distributed lock protection.
+     * @template T - Return type of the function
+     * @param {string} key - Lock key to acquire
+     * @param {number} ttlMs - Lock TTL in milliseconds
+     * @param {() => Promise<T>} fn - Function to execute with lock protection
+     * @param {object} [options] - Optional retry configuration
+     * @param {number} [options.maxRetries] - Maximum number of lock acquisition retries
+     * @param {number} [options.retryDelayMs] - Delay between retries in milliseconds
+     * @returns {Promise<T>} Result of the executed function
+     * @throws {Error} If lock cannot be acquired or function execution fails
+     * @example
+     * const result = await facade.withLock('order:123', 30000, async () => {
+     *   // Critical section - only one process can execute this
+     *   return processOrder(123);
+     * }, { maxRetries: 3, retryDelayMs: 100 });
+     */
     async withLock<T>(
         key: string,
         ttlMs: number,
@@ -1653,6 +1842,18 @@ export class RedisFacade {
 
     // ========== RATE LIMITING WITH LODASH ==========
 
+    /**
+     * Apply fixed window rate limiting.
+     * @param {string} key - Rate limit key (e.g., user ID or IP)
+     * @param {number} limit - Maximum number of requests allowed in window
+     * @param {number} windowMs - Time window in milliseconds
+     * @returns {Promise<RateLimitResult>} Rate limit result with remaining quota
+     * @example
+     * const result = await facade.rateLimit(`user:${userId}`, 100, 60000);
+     * if (!result.allowed) {
+     *   throw new Error('Rate limit exceeded');
+     * }
+     */
     async rateLimit(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
         const safeLimit = safeParseInteger(limit, 100);
         const safeWindow = safeParseInteger(windowMs, 60000); // Default 1 minute
@@ -1737,6 +1938,13 @@ export class RedisFacade {
 
     // ========== STATISTICS & MONITORING WITH LODASH ==========
 
+    /**
+     * Get comprehensive cache statistics including hit rate and memory usage.
+     * @returns {Promise<CacheStats & { connectionHealth: ConnectionHealth }>} Cache statistics with connection health
+     * @example
+     * const stats = await facade.getCacheStats();
+     * console.log(`Hit rate: ${stats.hitRate}%, Memory: ${stats.memoryUsage}`);
+     */
     async getCacheStats(): Promise<CacheStats & { connectionHealth: ConnectionHealth }> {
         try {
             const keyCount = await this.scanKeys('*');
@@ -1766,6 +1974,14 @@ export class RedisFacade {
         }
     }
 
+    /**
+     * Get detailed statistics for keys matching a pattern.
+     * @param {string} [pattern='*'] - Pattern to match keys
+     * @returns {Promise<Array<{ key: string; size?: number; ttl: number; type: string }>>} Array of key statistics
+     * @example
+     * const keyStats = await facade.getKeyStats('user:*');
+     * keyStats.forEach(stat => console.log(`${stat.key}: ${stat.type}, TTL: ${stat.ttl}`));
+     */
     async getKeyStats(pattern = '*'): Promise<Array<{ key: string; size?: number; ttl: number; type: string }>> {
         const keys = await this.scanKeys(pattern);
 
@@ -1820,34 +2036,87 @@ export class RedisFacade {
 
     // ========== UTILITY FUNCTIONS WITH LODASH ==========
 
+    /**
+     * Get the number of keys in the current database.
+     * @returns {Promise<number>} Number of keys in database
+     * @example
+     * const keyCount = await facade.dbsize();
+     */
     async dbsize(): Promise<number> {
         return (this.client as Redis).dbsize();
     }
 
+    /**
+     * Execute a Lua script on Redis server.
+     * @param {string} script - Lua script to execute
+     * @param {number} numKeys - Number of keys in the script
+     * @param {...Array<number | string>} args - Arguments for the script
+     * @returns {Promise<unknown>} Result of script execution
+     * @example
+     * const result = await facade.eval('return ARGV[1]', 0, 'hello');
+     */
     async eval(script: string, numKeys: number, ...args: Array<number | string>): Promise<unknown> {
         const safeNumKeys = safeParseInteger(numKeys, 0);
 
         return (this.client as Redis).eval(script, safeNumKeys, ...args);
     }
 
+    /**
+     * Flush all keys from the current database.
+     * @returns {Promise<'OK'>} OK response from Redis
+     * @example
+     * await facade.flushdb();
+     */
     async flushdb(): Promise<'OK'> {
         return (this.client as Redis).flushdb();
     }
 
+    /**
+     * Get Redis server information.
+     * @param {string} [section] - Optional info section to retrieve
+     * @returns {Promise<string>} Redis info string
+     * @example
+     * const memoryInfo = await facade.info('memory');
+     * const allInfo = await facade.info();
+     */
     async info(section?: string): Promise<string> {
         return isString(section) && !isEmpty(section)
             ? (this.client as Redis).info(section)
             : (this.client as Redis).info();
     }
 
+    /**
+     * Create a multi command transaction.
+     * @returns {Multi} Redis multi command object
+     * @example
+     * const multi = facade.multi();
+     * multi.set('key1', 'value1');
+     * multi.set('key2', 'value2');
+     * await multi.exec();
+     */
     multi() {
         return (this.client as Redis).multi();
     }
 
+    /**
+     * Ping the Redis server.
+     * @returns {Promise<string>} PONG response from Redis
+     * @example
+     * const response = await facade.ping(); // 'PONG'
+     */
     async ping(): Promise<string> {
         return (this.client as Redis).ping();
     }
 
+    /**
+     * Create a pipeline for batching commands.
+     * @returns {Pipeline} Redis pipeline object
+     * @example
+     * const pipeline = facade.pipeline();
+     * pipeline.set('key1', 'value1');
+     * pipeline.get('key2');
+     * const results = await pipeline.exec();
+     */
     pipeline() {
         return (this.client as Redis).pipeline();
     }
@@ -2034,6 +2303,15 @@ export class RedisFacade {
         };
     }
 
+    /**
+     * Perform basic health check by pinging Redis.
+     * @returns {Promise<HealthCheckResult>} Health check result with status and latency
+     * @example
+     * const health = await facade.healthCheck();
+     * if (health.status === 'healthy') {
+     *   console.log(`Redis is healthy (${health.latency}ms)`);
+     * }
+     */
     async healthCheck(): Promise<HealthCheckResult> {
         const start = Date.now();
 
@@ -2059,6 +2337,13 @@ export class RedisFacade {
         }
     }
 
+    /**
+     * Perform detailed health check operation.
+     * @param {string} checkName - Name of the health check
+     * @param {Record<string, { error?: string; latency: number; ok: boolean }>} checks - Object to store check results
+     * @param {() => Promise<void>} operation - Health check operation to perform
+     * @returns {Promise<void>} Promise that resolves when check is complete
+     */
     private async performHealthCheck(
         checkName: string,
         checks: Record<string, { error?: string; latency: number; ok: boolean }>,
